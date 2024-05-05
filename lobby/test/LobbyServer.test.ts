@@ -25,9 +25,9 @@ describe('LobbyServer', () => {
     client = await createClient(`ws://localhost:${WS_PORT}`);
   });
   afterAll(async () => {
-    restore();
     client.close();
     await server.stop();
+    restore();
   });
 
   describe('ping', () => {

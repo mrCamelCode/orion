@@ -1,11 +1,13 @@
 import { assertEquals } from 'assert';
 import { afterAll, beforeAll, describe, test } from 'bdd';
 import { restore } from 'mock';
-import { stubLogger } from '../../util/testing.util.ts';
+import { decodeWsMessage } from '../../network/network.util.ts';
+import { waitFor } from '../../util/util.ts';
 import { LobbyServer } from '../LobbyServer.ts';
-import { LobbyClientWsMethod, LobbyServerWsMethod } from '../lobby.model.ts';
+import { ClientWsMethod, ServerWsMethod, WsMessagePayload, WsMethod } from '../lobby.model.ts';
 
 const WS_PORT = 3000;
+const WS_CONNECTION_URL = `ws://localhost:${WS_PORT}`;
 
 const server = new LobbyServer();
 
@@ -18,11 +20,11 @@ describe('LobbyServer', () => {
   let client: WebSocket;
 
   beforeAll(async () => {
-    stubLogger();
+    // stubLogger();
 
     server.start(WS_PORT);
 
-    client = await createClient(`ws://localhost:${WS_PORT}`);
+    client = await createClient(WS_CONNECTION_URL);
   });
   afterAll(async () => {
     client.close();
@@ -30,22 +32,61 @@ describe('LobbyServer', () => {
     restore();
   });
 
+  // TODO: Need to add tests that verify that the server can gracefully handle
+  // being given a malformed message.
+
   describe('ping', () => {
     test('returns pong', async () => {
-      const messageWaiter = waitForMessage(client, LobbyServerWsMethod.Pong);
+      const messageWaiter = waitForMessage(client, ServerWsMethod.Pong);
 
-      client.send(LobbyClientWsMethod.Ping);
+      client.send(ClientWsMethod.Ping);
 
-      const response = await messageWaiter;
+      const [method, payload] = await messageWaiter;
 
-      assertEquals(response, LobbyServerWsMethod.Pong);
+      assertEquals(method, ServerWsMethod.Pong);
+      assertEquals(payload, {});
+    });
+  });
+
+  describe('connection', () => {
+    test('server responds with registration success indication and token on successful connection', async () => {
+      let method: WsMethod;
+      let payload: any;
+      const newClient = await createClient(WS_CONNECTION_URL, {
+        [ServerWsMethod.ClientRegistered]: (receivedMethod, receivedPayload) => {
+          method = receivedMethod;
+          payload = receivedPayload;
+        },
+      });
+
+      await waitFor(() => !!method);
+      await waitFor(() => !!payload);
+
+      assertEquals(method!, ServerWsMethod.ClientRegistered);
+      assertEquals('token' in payload, true);
+
+      newClient.close();
     });
   });
 });
 
-function createClient(url: string): Promise<WebSocket> {
+function createClient(
+  url: string,
+  subs?: Partial<Record<WsMethod, <T extends WsMethod>(method: T, payload: WsMessagePayload[T]) => void>>
+): Promise<WebSocket> {
   return new Promise((resolve) => {
     const newClient = new WebSocket(url);
+
+    if (subs) {
+      newClient.addEventListener('message', (event) => {
+        const [receivedMethod, payload] = decodeWsMessage(event.data);
+
+        const action = subs[receivedMethod as keyof WsMessagePayload];
+
+        // @ts-ignore: TODO
+        action?.(receivedMethod as WsMethod, payload);
+      });
+    }
 
     newClient.addEventListener('open', () => {
       resolve(newClient);
@@ -53,13 +94,13 @@ function createClient(url: string): Promise<WebSocket> {
   });
 }
 
-function waitForMessage(socket: WebSocket, method: LobbyClientWsMethod | LobbyServerWsMethod): Promise<string> {
+function waitForMessage(socket: WebSocket, method: ClientWsMethod | ServerWsMethod): Promise<[string, any]> {
   return new Promise((resolve) => {
     socket.addEventListener('message', (event) => {
-      const [receivedMethod, payload] = (event.data as string).split(':');
+      const [receivedMethod, payload] = decodeWsMessage(event.data);
 
       if (receivedMethod === method) {
-        resolve(payload);
+        resolve([receivedMethod, payload]);
       }
     });
   });

@@ -1,8 +1,9 @@
-import { NetworkClient } from '../client/NetworkClient.ts';
-import { NetworkClientRegistry } from '../client/NetworkClientRegistry.ts';
 import { logger } from '../logging/Logger.ts';
+import { NetworkClient } from '../network/NetworkClient.ts';
+import { NetworkClientRegistry } from '../network/NetworkClientRegistry.ts';
+import { encodeWsMessage } from '../network/network.util.ts';
 import { LobbyRegistry } from './LobbyRegistry.ts';
-import { LobbyClientWsMethod, LobbyServerWsMethod } from './lobby.model.ts';
+import { ClientWsMethod, ServerWsMethod } from './lobby.model.ts';
 
 export class LobbyServer {
   public static readonly DEFAULT_PORT = 5980;
@@ -47,9 +48,11 @@ export class LobbyServer {
 
   #registerWebSocketMessageHandlers(socket: WebSocket): void {
     socket.addEventListener('open', () => {
-      const { id } = this.#networkClientRegistry.register(new NetworkClient(socket));
+      const { id, item: registeredClient } = this.#networkClientRegistry.register(new NetworkClient(socket));
 
       logger.info(`A client connected and was registered with the ID ${id}.`);
+
+      socket.send(encodeWsMessage(ServerWsMethod.ClientRegistered, { token: registeredClient.token }));
     });
     socket.addEventListener('close', () => {
       const networkClient = this.#networkClientRegistry.getBy(({ item }) => item.socket === socket);
@@ -70,8 +73,8 @@ export class LobbyServer {
         const [method, payload] = data.split(':');
 
         switch (method) {
-          case LobbyClientWsMethod.Ping:
-            socket.send(`${LobbyServerWsMethod.Pong}:${LobbyServerWsMethod.Pong}`);
+          case ClientWsMethod.Ping:
+            socket.send(encodeWsMessage(ServerWsMethod.Pong, {}));
             break;
           default:
             logger.warn(`Received message with unknown method: ${method}`);

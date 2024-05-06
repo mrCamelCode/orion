@@ -1,12 +1,20 @@
-export type LobbyCode = string;
+import { EmptyObject } from '../types/types.ts';
 
 /**
  * Methods the server sends over the WS connection to the clients.
  *
  * Clients need to have handlers for these methods.
  */
-export enum LobbyServerWsMethod {
+export enum ServerWsMethod {
   Pong = 'pong',
+  /**
+   * Emitted by the server after the client successfully connects to the
+   * server. This message is accompanied with the token the client needs
+   * to send on future messages. The token identifies the user and should
+   * be treated as a secret. The client cannot send valid messages without
+   * a proper token.
+   */
+  ClientRegistered = 'client_registered',
   CreateSuccess = 'lobby_create_success',
   ClientJoined = 'lobby_clientJoined',
   ClientLeft = 'lobby_clientLeft',
@@ -20,7 +28,7 @@ export enum LobbyServerWsMethod {
  *
  * The server needs to have handlers for these methods.
  */
-export enum LobbyClientWsMethod {
+export enum ClientWsMethod {
   Ping = 'ping',
   Create = 'lobby_create',
   Join = 'lobby_join',
@@ -29,8 +37,11 @@ export enum LobbyClientWsMethod {
   Close = 'lobby_close',
 }
 
-interface LobbyMessagePayloadMapping {
-  [LobbyClientWsMethod.Create]: {
-    test: string;
+export interface WsMessagePayload {
+  [ServerWsMethod.Pong]: EmptyObject;
+  [ServerWsMethod.ClientRegistered]: {
+    token: string;
   };
 }
+
+export type WsMethod = keyof WsMessagePayload;

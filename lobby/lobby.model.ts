@@ -1,3 +1,4 @@
+import { IdToken } from "../shared/model.ts";
 import { EmptyObject } from '../types/types.ts';
 
 /**
@@ -40,7 +41,7 @@ export enum ClientWsMethod {
 export interface WsMessagePayload {
   [ServerWsMethod.Pong]: EmptyObject;
   [ServerWsMethod.ClientRegistered]: {
-    token: string;
+    token: IdToken;
   };
 }
 

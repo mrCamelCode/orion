@@ -3,3 +3,5 @@ export interface IIdentifiable {
 }
 
 export type Id = IIdentifiable['id'];
+
+export type IdToken = string;

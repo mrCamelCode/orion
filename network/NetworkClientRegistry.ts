@@ -1,4 +1,5 @@
 import { RegisteredItem, Registry } from '../shared/Registry.abstract.ts';
+import { IdToken } from '../shared/model.ts';
 import { NetworkClient } from './NetworkClient.ts';
 
 export class NetworkClientRegistry extends Registry<NetworkClient> {
@@ -10,7 +11,7 @@ export class NetworkClientRegistry extends Registry<NetworkClient> {
    * @returns The network client, if a client with the corresponding token was found,
    * `undefined` otherwise.
    */
-  getByToken(token: string): RegisteredItem<NetworkClient> | undefined {
+  getByToken(token: IdToken): RegisteredItem<NetworkClient> | undefined {
     const id = this.#tokenToClientMapping[token];
 
     return this.getById(id);

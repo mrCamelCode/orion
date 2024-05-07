@@ -2,7 +2,8 @@
   "version": "3",
   "packages": {
     "specifiers": {
-      "npm:@jtjs/event": "npm:@jtjs/event@1.0.2_tslib@2.6.2"
+      "npm:@jtjs/event": "npm:@jtjs/event@1.0.2_tslib@2.6.2",
+      "npm:zod": "npm:zod@3.23.6"
     },
     "npm": {
       "@jtjs/event@1.0.2_tslib@2.6.2": {
@@ -13,6 +14,10 @@
       },
       "tslib@2.6.2": {
         "integrity": "sha512-AEYxH93jGFPn/a2iVAwW87VuUIkR1FVUKB77NwMF7nBTDkDrrT/Hpt/IrCJ0QXhW27jTBDcf5ZY7w6RiqTMw2Q==",
+        "dependencies": {}
+      },
+      "zod@3.23.6": {
+        "integrity": "sha512-RTHJlZhsRbuA8Hmp/iNL7jnfc4nZishjsanDAfEY1QpDQZCahUp3xDzl+zfweE9BklxMUcgBgS1b7Lvie/ZVwA==",
         "dependencies": {}
       }
     }
@@ -59,7 +64,8 @@
   },
   "workspace": {
     "dependencies": [
-      "npm:@jtjs/event"
+      "npm:@jtjs/event",
+      "npm:zod"
     ]
   }
 }

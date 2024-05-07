@@ -1,6 +1,6 @@
 import { assert, assertEquals } from 'assert';
 import { describe, test } from 'bdd';
-import { ServerWsMethod } from '../../lobby/lobby.model.ts';
+import { ServerWsMethod } from '../network.model.ts';
 import { decodeWsMessage, encodeWsMessage } from '../network.util.ts';
 
 describe('Network Util', () => {

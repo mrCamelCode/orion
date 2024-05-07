@@ -4,7 +4,8 @@
     "bdd": "https://deno.land/std@0.224.0/testing/bdd.ts",
     "assert": "https://deno.land/std@0.224.0/assert/mod.ts",
     "mock": "https://deno.land/std@0.224.0/testing/mock.ts",
-    "base64": "https://deno.land/std@0.224.0/encoding/base64.ts"
+    "base64": "https://deno.land/std@0.224.0/encoding/base64.ts",
+    "zod": "npm:zod"
   },
   "tasks": {
     "start": "deno run --allow-net --unstable-net main.ts",

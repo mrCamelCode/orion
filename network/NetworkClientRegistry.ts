@@ -1,9 +1,20 @@
-import { RegisteredItem, Registry } from '../shared/Registry.abstract.ts';
+import { ItemRegisteredHandler, ItemRemovedHandler, RegisteredItem, Registry } from '../shared/Registry.abstract.ts';
 import { IdToken } from '../shared/model.ts';
 import { NetworkClient } from './NetworkClient.ts';
 
 export class NetworkClientRegistry extends Registry<NetworkClient> {
   #tokenToClientMapping: Record<string, string> = {};
+
+  constructor() {
+    super();
+
+    this.onItemRegistered.subscribe(this.#handleItemRegistered);
+    this.onItemRemoved.subscribe(this.#handleItemRemoved);
+  }
+
+  getBySocket(socket: WebSocket): RegisteredItem<NetworkClient> | undefined {
+    return this.getBy(({ item }) => item.socket === socket);
+  }
 
   /**
    * @param token - The network client's identity token.
@@ -17,21 +28,11 @@ export class NetworkClientRegistry extends Registry<NetworkClient> {
     return this.getById(id);
   }
 
-  override register(item: NetworkClient): RegisteredItem<NetworkClient> {
-    const registeredItem = super.register(item);
+  #handleItemRegistered: ItemRegisteredHandler<NetworkClient> = (item) => {
+    this.#tokenToClientMapping[item.item.token] = item.id;
+  };
 
-    this.#tokenToClientMapping[registeredItem.item.token] = registeredItem.id;
-
-    return registeredItem;
-  }
-
-  override removeById(id: string): void {
-    const currentItem = this.getById(id);
-
-    if (currentItem) {
-      delete this.#tokenToClientMapping[currentItem.item.token];
-    }
-
-    super.removeById(id);
-  }
+  #handleItemRemoved: ItemRemovedHandler<NetworkClient> = (item) => {
+    delete this.#tokenToClientMapping[item.item.token];
+  };
 }

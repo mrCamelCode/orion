@@ -161,12 +161,12 @@ describe('LobbyServer', () => {
             waitForMessage(otherClient.client, ServerWsMethod.JoinLobbySuccess)
           );
 
-          otherClients.forEach((otherClient) => {
+          otherClients.forEach((otherClient, i) => {
             otherClient.client.send(
               encodeWsMessage(ClientWsMethod.JoinLobby, {
                 token: otherClient.token,
                 lobbyId,
-                peerName: 'peer',
+                peerName: `peer${i}`,
               })
             );
           });
@@ -202,12 +202,12 @@ describe('LobbyServer', () => {
             waitForMessage(otherClient.client, ServerWsMethod.JoinLobbySuccess)
           );
 
-          otherClients.forEach((otherClient) => {
+          otherClients.forEach((otherClient, i) => {
             otherClient.client.send(
               encodeWsMessage(ClientWsMethod.JoinLobby, {
                 token: otherClient.token,
                 lobbyId,
-                peerName: 'peer',
+                peerName: `peer${i}`,
               })
             );
           });
@@ -593,7 +593,7 @@ describe('LobbyServer', () => {
           encodeWsMessage(ClientWsMethod.JoinLobby, {
             token: otherPeerClientToken,
             lobbyId,
-            peerName: 'Peer JT',
+            peerName: 'Peer JT 2',
           })
         );
 
@@ -822,6 +822,38 @@ describe('LobbyServer', () => {
           const [, { errors }] = await joinLobbyFailure;
 
           assert(errors.some((error: string) => error.includes('lobby is full')));
+
+          peerClient.close();
+        });
+        test('someone with the requested name is already in the lobby', async () => {
+          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+
+          client.send(
+            encodeWsMessage(ClientWsMethod.CreateLobby, {
+              token,
+              lobbyName: 'My lobby',
+              hostName: 'jt',
+              isPublic: true,
+              maxMembers: 3,
+            })
+          );
+
+          const [, { lobbyId }] = await createLobbySuccess;
+
+          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
+          const joinLobbyFailure = waitForMessage(peerClient, ServerWsMethod.JoinLobbyFailure);
+
+          peerClient.send(
+            encodeWsMessage(ClientWsMethod.JoinLobby, {
+              token: peerClientToken,
+              lobbyId,
+              peerName: 'jt',
+            })
+          );
+
+          const [, { errors }] = await joinLobbyFailure;
+
+          assert(errors.some((error: string) => error.includes('name is taken')));
 
           peerClient.close();
         });

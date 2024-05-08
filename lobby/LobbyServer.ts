@@ -180,7 +180,17 @@ export class LobbyServer {
         const { item: lobby } = this.#lobbyRegistry.getById(lobbyId) ?? {};
 
         if (lobby) {
-          if (!lobby.isFull) {
+          if (lobby.isFull) {
+            return getOutboundMessage(ServerWsMethod.JoinLobbyFailure, {
+              lobbyId,
+              errors: [`The lobby is full.`],
+            });
+          } else if (lobby.members.some((member) => member.name === peerName)) {
+            return getOutboundMessage(ServerWsMethod.JoinLobbyFailure, {
+              lobbyId,
+              errors: [`The requested name is taken.`],
+            });
+          } else {
             const peerLobbyClient = new LobbyClient(peerName, networkClient);
 
             const addSucceeded = this.#lobbyRegistry.addMemberToLobby(lobbyId, peerLobbyClient);
@@ -199,11 +209,6 @@ export class LobbyServer {
                   lobbyId,
                   errors: [`The lobby is full or the client is already in the lobby.`],
                 });
-          } else {
-            return getOutboundMessage(ServerWsMethod.JoinLobbyFailure, {
-              lobbyId,
-              errors: [`The lobby is full.`],
-            });
           }
         } else {
           logger.info(`Client ${networkClientId} attempted to join a non-existent lobby.`);
@@ -252,8 +257,5 @@ export class LobbyServer {
     }),
     [ClientWsMethod.CreateLobby]: this.#handleCreateLobby,
     [ClientWsMethod.JoinLobby]: this.#handleJoinLobby,
-    [ClientWsMethod.LeaveLobby]: () => {
-      throw new Error('TODO');
-    },
   };
 }

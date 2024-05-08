@@ -11,6 +11,7 @@ export enum ServerWsMethod {
    * There was a problem with a message the client sent to the server.
    */
   MessageError = 'message_error',
+
   /**
    * Emitted by the server after the client successfully connects to the
    * server. This message is accompanied with the token the client needs
@@ -19,19 +20,20 @@ export enum ServerWsMethod {
    * a proper token.
    */
   ClientRegistered = 'client_registered',
+
   CreateLobbySuccess = 'lobby_create_success',
   CreateLobbyFailure = 'lobby_create_failure',
+
   JoinLobbySuccess = 'lobby_join_success',
   JoinLobbyFailure = 'lobby_join_failure',
+
   /**
    * Emitted when a lobby is closed. A lobby could be closed because the host
-   * leaves or disconnects unexpectedly.
+   * leaves. When a lobby closes, it's destroyed and all its members are kicked
+   * out.
    */
   LobbyClosed = 'lobby_closed',
-  /**
-   * Emitted when a request to leave a lobby succeeds.
-   */
-  LeaveLobbySuccess = 'lobby_leave_success',
+
   /**
    * Emitted to others in a lobby when a new member joins it.
    */
@@ -50,7 +52,6 @@ export enum ServerWsMethod {
 export enum ClientWsMethod {
   Ping = 'ping',
   CreateLobby = 'lobby_create',
-  LeaveLobby = 'lobby_leave',
   JoinLobby = 'lobby_join',
 }
 
@@ -126,10 +127,11 @@ export const wsMessagePayloadSchemaMap = {
     lobbyName: z.string(),
   }),
   [ServerWsMethod.PeerConnected]: z.object({
-    peerName: z.string(),
     lobbyId: z.string(),
+    peerName: z.string(),
   }),
   [ServerWsMethod.PeerDisconnected]: z.object({
+    lobbyId: z.string(),
     peerName: z.string(),
   }),
 
@@ -146,11 +148,6 @@ export const wsMessagePayloadSchemaMap = {
     z.object({
       lobbyId: z.string(),
       peerName: z.string().max(50).regex(nameRegex, 'Peer name cannot be only spaces and must be alphanumeric.'),
-    })
-  ),
-  [ClientWsMethod.LeaveLobby]: registeredClientMessagePayloadSchema.merge(
-    z.object({
-      lobbyId: z.string(),
     })
   ),
 };

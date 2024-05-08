@@ -84,6 +84,7 @@ export class LobbyRegistry extends Registry<Lobby> {
         sendToSockets(
           encodeWsMessage(ServerWsMethod.PeerDisconnected, {
             peerName: lobbyClient.name,
+            lobbyId,
           }),
           ...getSocketsFromLobbyClients(membersToNotify)
         );

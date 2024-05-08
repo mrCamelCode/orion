@@ -8,7 +8,7 @@
     "zod": "npm:zod"
   },
   "tasks": {
-    "start": "deno run --allow-net --unstable-net main.ts",
-    "test": "deno test --allow-net"
+    "start": "deno run --allow-net --unstable-net --allow-read main.ts",
+    "test": "deno test --allow-net --allow-read"
   }
 }

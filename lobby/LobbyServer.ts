@@ -8,7 +8,7 @@ import {
   WsMethod,
   wsMessagePayloadSchemaMap,
 } from '../network/network.model.ts';
-import { decodeWsMessage, encodeWsMessage, getOutboundMessage } from '../network/network.util.ts';
+import { decodeWsMessage, encodeWsMessage, getOutboundMessage, sendToSockets } from '../network/network.util.ts';
 import { Lobby } from './Lobby.ts';
 import { LobbyClient } from './LobbyClient.ts';
 import { LobbyRegistry } from './LobbyRegistry.ts';
@@ -42,19 +42,38 @@ export class LobbyServer {
     if (req.headers.get('upgrade') === 'websocket') {
       const { socket, response } = Deno.upgradeWebSocket(req);
 
-      socket.addEventListener('open', () => {});
-
       this.#registerWebSocketMessageHandlers(socket);
 
       return response;
     }
 
-    // TODO: This makes it so the server doesn't service any other
-    // HTTP requests besides an upgrade request. If we add
-    // the ability to make HTTP requests down the line
-    // (like maybe for seeing all the currently available public
-    //  lobbies), this will have to be removed.
-    return new Response(undefined, { status: 501 });
+    // TODO: Routing could definitely be done in a more robust and scalable way
+    // if more endpoints are added down the line.
+    const [requiredApiPrefix, controller] = new URL(req.url).pathname.split('/').filter(Boolean);
+
+    if (requiredApiPrefix === 'api') {
+      switch (controller) {
+        case 'ping':
+          return new Response(JSON.stringify('pong'));
+        case 'lobbies':
+          return new Response(
+            JSON.stringify({
+              lobbies: this.#lobbyRegistry.registeredItems
+                .filter((registeredLobby) => registeredLobby.item.isPublic)
+                .map(({ item: lobby, id }) => {
+                  return {
+                    name: lobby.name,
+                    id,
+                    currentMembers: lobby.numMembers,
+                    maxMembers: lobby.maxMembers,
+                  };
+                }),
+            })
+          );
+      }
+    }
+
+    return new Response(new TextEncoder().encode(`<p>You look like you're lost</p>`));
   };
 
   #registerWebSocketMessageHandlers(socket: WebSocket): void {
@@ -63,7 +82,7 @@ export class LobbyServer {
 
       logger.info(`A client connected and was registered with the ID ${id}.`);
 
-      socket.send(encodeWsMessage(ServerWsMethod.ClientRegistered, { token: registeredClient.token }));
+      sendToSockets(encodeWsMessage(ServerWsMethod.ClientRegistered, { token: registeredClient.token }), socket);
     });
     socket.addEventListener('close', () => {
       const networkClient = this.#networkClientRegistry.getBySocket(socket);
@@ -81,41 +100,44 @@ export class LobbyServer {
     socket.addEventListener('message', (event) => {
       const { data } = event;
 
+      const requestingClient = this.#networkClientRegistry.getBySocket(socket);
+
       if (typeof data === 'string') {
-        const [method, payload] = decodeWsMessage(event.data);
+        try {
+          const [method, payload] = decodeWsMessage(event.data);
 
-        const validationErrors = this.#validateMessage(method, payload);
+          const validationErrors = this.#validateMessage(method, payload);
 
-        if (validationErrors.length > 0) {
-          logger.warn(
-            `Client ${
-              this.#networkClientRegistry.getBySocket(socket)?.id ?? 'UNKNOWN'
-            } sent a message that didn't pass validation.`
-          );
+          if (validationErrors.length > 0) {
+            logger.warn(`Client ${requestingClient?.id ?? 'UNKNOWN'} sent a message that didn't pass validation.`);
 
-          socket.send(
-            encodeWsMessage(ServerWsMethod.MessageError, {
-              method: method,
-              errors: validationErrors,
-            })
-          );
-        } else {
-          const handler = this.#handlerMapping[method as ClientWsMethod] as OutboundMessage<any> | undefined;
+            sendToSockets(
+              encodeWsMessage(ServerWsMethod.MessageError, {
+                method: method,
+                errors: validationErrors,
+              }),
+              socket
+            );
+          } else {
+            const handler = this.#handlerMapping[method as ClientWsMethod] as OutboundMessage<any> | undefined;
 
-          const { method: outgoingMethod, payload: outgoingPayload } = handler?.(payload) ?? {};
+            const { method: outgoingMethod, payload: outgoingPayload } = handler?.(payload) ?? {};
 
-          if (outgoingMethod && outgoingPayload) {
-            socket.send(encodeWsMessage(outgoingMethod as WsMethod, outgoingPayload));
+            if (outgoingMethod && outgoingPayload) {
+              sendToSockets(encodeWsMessage(outgoingMethod as WsMethod, outgoingPayload), socket);
+            }
           }
+        } catch (error) {
+          logger.warn(`Client ${requestingClient?.id ?? 'UNKNOWN'} sent a message that threw an unforeseen error.`);
         }
       }
     });
   }
 
   #handleCreateLobby: OutboundMessage<ClientWsMethod.CreateLobby> = (payload) => {
-    const { lobbyName, hostName, token } = payload;
+    const { lobbyName, hostName, token, isPublic, maxMembers } = payload;
 
-    const { item: networkClient } = this.#networkClientRegistry.getByToken(token) ?? {};
+    const { item: networkClient, id: networkClientId } = this.#networkClientRegistry.getByToken(token) ?? {};
     if (networkClient) {
       if (this.#lobbyRegistry.isNetworkClientInLobby(networkClient)) {
         return getOutboundMessage(ServerWsMethod.CreateLobbyFailure, {
@@ -124,7 +146,11 @@ export class LobbyServer {
       } else {
         const hostLobbyClient = new LobbyClient(hostName, networkClient);
 
-        const { item: newLobby, id: newLobbyId } = this.#lobbyRegistry.register(new Lobby(lobbyName, hostLobbyClient));
+        const { item: newLobby, id: newLobbyId } = this.#lobbyRegistry.register(
+          new Lobby(lobbyName, hostLobbyClient, maxMembers, isPublic)
+        );
+
+        logger.info(`Client ${networkClientId} is now the host of a new lobby with ID ${newLobbyId}`);
 
         return getOutboundMessage(ServerWsMethod.CreateLobbySuccess, {
           lobbyName: newLobby.name,

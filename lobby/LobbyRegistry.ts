@@ -1,6 +1,6 @@
 import { NetworkClient } from '../network/NetworkClient.ts';
 import { ServerWsMethod } from '../network/network.model.ts';
-import { encodeWsMessage } from '../network/network.util.ts';
+import { encodeWsMessage, sendToSockets } from '../network/network.util.ts';
 import { ItemRegisteredHandler, ItemRemovedHandler, Registry } from '../shared/Registry.abstract.ts';
 import { IdToken } from '../shared/model.ts';
 import { generateBase36Id } from '../util/util.ts';
@@ -21,7 +21,7 @@ export class LobbyRegistry extends Registry<Lobby> {
   }
 
   /**
-   * Adds the specified client to the lobby, if the lobby exists.
+   * Adds the specified client to the lobby, if the lobby exists and it's not already at its max member amount.
    *
    * If there are other members already in the lobby, all other
    * members are notified of a new peer connecting.
@@ -32,20 +32,20 @@ export class LobbyRegistry extends Registry<Lobby> {
   addMemberToLobby(lobbyId: string, lobbyClient: LobbyClient) {
     const { item: lobby } = this.getById(lobbyId) ?? {};
 
-    if (lobby && !lobby.isMemberInLobby(lobbyClient)) {
+    if (lobby && !lobby.isMemberInLobby(lobbyClient) && lobby.numMembers < lobby.maxMembers) {
       lobby.addMember(lobbyClient);
 
       this.#networkClientToLobbyMapping[lobbyClient.networkClient.token] = lobbyId;
 
       const membersToNotify = lobby.otherMembers(lobbyClient);
 
-      membersToNotify.forEach((member) => {
-        member.networkClient.socket.send(
-          encodeWsMessage(ServerWsMethod.PeerConnected, {
-            peerName: lobbyClient.name,
-          })
-        );
-      });
+      sendToSockets(
+        encodeWsMessage(ServerWsMethod.PeerConnected, {
+          peerName: lobbyClient.name,
+          lobbyId,
+        }),
+        ...getSocketsFromLobbyClients(membersToNotify)
+      );
     }
   }
 
@@ -75,13 +75,12 @@ export class LobbyRegistry extends Registry<Lobby> {
       } else {
         const membersToNotify = lobby.otherMembers(lobbyClient);
 
-        membersToNotify.forEach((member) => {
-          member.networkClient.socket.send(
-            encodeWsMessage(ServerWsMethod.PeerDisconnected, {
-              peerName: lobbyClient.name,
-            })
-          );
-        });
+        sendToSockets(
+          encodeWsMessage(ServerWsMethod.PeerDisconnected, {
+            peerName: lobbyClient.name,
+          }),
+          ...getSocketsFromLobbyClients(membersToNotify)
+        );
       }
 
       lobby.removeMember(lobbyClient);
@@ -121,7 +120,6 @@ export class LobbyRegistry extends Registry<Lobby> {
 
   getLobbyClientFromNetworkClient(networkClient: NetworkClient): LobbyClient | undefined {
     const lobbyId = this.#networkClientToLobbyMapping[networkClient.token];
-
     if (lobbyId) {
       const { item: lobby } = this.getById(lobbyId) ?? {};
 
@@ -136,9 +134,9 @@ export class LobbyRegistry extends Registry<Lobby> {
   }
 
   #handleItemRegistered: ItemRegisteredHandler<Lobby> = (item) => {
-    const { item: lobby } = item;
+    const { item: lobby, id: lobbyId } = item;
 
-    this.#networkClientToLobbyMapping[lobby.host.networkClient.token] = item.id;
+    this.#networkClientToLobbyMapping[lobby.host.networkClient.token] = lobbyId;
   };
 
   #handleItemRemoved: ItemRemovedHandler<Lobby> = (item) => {
@@ -150,13 +148,16 @@ export class LobbyRegistry extends Registry<Lobby> {
 
     const members = removedLobby.members;
 
-    members.forEach((member) => {
-      member.networkClient.socket.send(
-        encodeWsMessage(ServerWsMethod.LobbyClosed, {
-          lobbyName: removedLobby.name,
-          lobbyId: removedLobbyId,
-        })
-      );
-    });
+    sendToSockets(
+      encodeWsMessage(ServerWsMethod.LobbyClosed, {
+        lobbyName: removedLobby.name,
+        lobbyId: removedLobbyId,
+      }),
+      ...getSocketsFromLobbyClients(members)
+    );
   };
+}
+
+function getSocketsFromLobbyClients(clients: LobbyClient[]) {
+  return clients.map((client) => client.networkClient.socket);
 }

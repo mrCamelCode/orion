@@ -10,7 +10,7 @@ import { WsMessagePayloadMap, WsMethod } from './network.model.ts';
  * @returns The properly encoded message to send over the websocket connection.
  * Messages are in the format {method}:{base64EncodedPayload}.
  */
-export function encodeWsMessage<T extends keyof WsMessagePayloadMap>(method: T, payload: WsMessagePayloadMap[T]) {
+export function encodeWsMessage<T extends WsMethod>(method: T, payload: WsMessagePayloadMap[T]) {
   return `${method}:${encodeBase64(JSON.stringify(payload))}`;
 }
 
@@ -37,4 +37,21 @@ export function getOutboundMessage<T extends WsMethod>(
     method,
     payload,
   };
+}
+
+/**
+ * Convenience function that sends the provided `message` to the provided `sockets`.
+ * This function ensures the socket is open before trying to send the message.
+ *
+ * @param message - The message to send. Since this function attempts to unopinionated
+ * about the message itself, you must do any encoding yourself. This function will send exactly
+ * the message you specify.
+ * @param sockets - The sockets to send the provided message to.
+ */
+export function sendToSockets(message: string, ...sockets: WebSocket[]) {
+  sockets.forEach((socket) => {
+    if (socket.readyState === socket.OPEN) {
+      socket.send(message);
+    }
+  });
 }

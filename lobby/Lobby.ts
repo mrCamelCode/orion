@@ -7,8 +7,22 @@ export class Lobby {
     return [...this.#members];
   }
 
-  constructor(public readonly name: string, public readonly host: LobbyClient) {
-    this.members.push(host);
+  get numMembers(): number {
+    return this.#members.length;
+  }
+
+  constructor(
+    public readonly name: string,
+    public readonly host: LobbyClient,
+    public readonly maxMembers: number,
+    /**
+     * Whether a Lobby is public doesn't prevent other people from joining it,
+     * but it does limit visibility. Private lobbies shouldn't be exposed to clients
+     * that ask the server for all available lobbies.
+     */
+    public readonly isPublic = false
+  ) {
+    this.#members.push(host);
   }
 
   /**
@@ -20,6 +34,13 @@ export class Lobby {
     return this.#members.filter((member) => member.networkClient.token !== memberToExclude.networkClient.token);
   }
 
+  /**
+   * Attempts to add a member to the lobby.
+   *
+   * @param member - The member to add.
+   *
+   * @throws {Error} If the lobby is full.
+   */
   addMember(member: LobbyClient) {
     if (!this.isMemberInLobby(member)) {
       this.#members.push(member);

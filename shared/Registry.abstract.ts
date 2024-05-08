@@ -14,6 +14,10 @@ export abstract class Registry<T> {
 
   protected items: Record<Id, RegisteredItem<T>> = {};
 
+  get registeredItems(): RegisteredItem<T>[] {
+    return Object.values(this.items);
+  }
+
   register(item: T): RegisteredItem<T> {
     const id = this.getNextId();
 

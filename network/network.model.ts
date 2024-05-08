@@ -86,6 +86,7 @@ export const wsMessagePayloadSchemaMap = {
   }),
   [ServerWsMethod.PeerConnected]: z.object({
     peerName: z.string(),
+    lobbyId: z.string(),
   }),
   [ServerWsMethod.PeerDisconnected]: z.object({
     peerName: z.string(),
@@ -96,8 +97,11 @@ export const wsMessagePayloadSchemaMap = {
     z.object({
       hostName: z.string().max(50).regex(nameRegex, 'Host name cannot be only spaces and must be alphanumeric.'),
       lobbyName: z.string().max(50).regex(nameRegex, 'Lobby name cannot be only spaces and must be alphanumeric.'),
+      isPublic: z.boolean(),
+      maxMembers: z.number().min(1).max(64),
     })
   ),
+  [ClientWsMethod.JoinLobby]: registeredClientMessagePayloadSchema.merge(z.object({})),
   [ClientWsMethod.LeaveLobby]: registeredClientMessagePayloadSchema.merge(
     z.object({
       lobbyId: z.string(),
@@ -108,9 +112,9 @@ export const wsMessagePayloadSchemaMap = {
 // Convenience for WsMessagePayloadMap type.
 const wsMessagepayloadSchemaMapSchema = z.object(wsMessagePayloadSchemaMap);
 
-export type WsMessagePayloadMap = z.infer<typeof wsMessagepayloadSchemaMapSchema>;
-
 export type WsMethod = keyof typeof wsMessagePayloadSchemaMap;
+
+export type WsMessagePayloadMap = z.infer<typeof wsMessagepayloadSchemaMapSchema>;
 
 export type OutboundMessage<T extends WsMethod> = (payload: WsMessagePayloadMap[T]) =>
   | {

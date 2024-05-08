@@ -112,7 +112,7 @@ export class LobbyServer {
             logger.warn(`Client ${requestingClient?.id ?? 'UNKNOWN'} sent a message that didn't pass validation.`);
 
             sendToSockets(
-              encodeWsMessage(ServerWsMethod.MessageError, {
+              encodeWsMessage(ServerWsMethod.WsMessageError, {
                 method: method,
                 errors: validationErrors,
               }),
@@ -229,6 +229,49 @@ export class LobbyServer {
     }
   };
 
+  #handleLobbyMessage: OutboundMessage<ClientWsMethod.Message> = (payload) => {
+    const { lobbyId, message, token } = payload;
+
+    const { item: networkClient, id: networkClientId } = this.#networkClientRegistry.getByToken(token) ?? {};
+    if (networkClient) {
+      const { item: lobby } = this.#lobbyRegistry.getById(lobbyId) ?? {};
+
+      if (lobby) {
+        const lobbyClient = this.#lobbyRegistry.getLobbyClientFromNetworkClient(networkClient);
+
+        if (lobbyClient) {
+          if (lobby.isMember(lobbyClient)) {
+            sendToSockets(
+              encodeWsMessage(ServerWsMethod.MessageReceived, {
+                lobbyId,
+                message: {
+                  timestamp: Date.now(),
+                  message,
+                  senderName: lobbyClient.name,
+                },
+              }),
+              ...lobby.members.map((member) => member.networkClient.socket)
+            );
+          } else {
+            logger.warn(
+              `Client ${networkClientId} attempted to send message to lobby ${lobbyId}, but they're not a member of that lobby.`
+            );
+          }
+        } else {
+          logger.warn(
+            `Client ${networkClientId} attempted to send a message to lobby ${lobbyId}, but they're not in a lobby.`
+          );
+        }
+      } else {
+        logger.warn(`Client ${networkClientId} attempted to send a message to non-existent lobby ${lobbyId}.`);
+      }
+    } else {
+      logger.warn(`Unregistered client attempted to send message to lobby ${lobbyId}.`);
+    }
+
+    return undefined;
+  };
+
   #validateMessage(method: string, payload: any): string[] {
     const errors = [];
 
@@ -257,5 +300,6 @@ export class LobbyServer {
     }),
     [ClientWsMethod.CreateLobby]: this.#handleCreateLobby,
     [ClientWsMethod.JoinLobby]: this.#handleJoinLobby,
+    [ClientWsMethod.Message]: this.#handleLobbyMessage,
   };
 }

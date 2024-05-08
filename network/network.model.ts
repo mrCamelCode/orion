@@ -8,9 +8,9 @@ import { z } from 'zod';
 export enum ServerWsMethod {
   Pong = 'pong',
   /**
-   * There was a problem with a message the client sent to the server.
+   * There was a problem with a websocket message the client sent to the server.
    */
-  MessageError = 'message_error',
+  WsMessageError = 'wsMessage_error',
 
   /**
    * Emitted by the server after the client successfully connects to the
@@ -42,6 +42,13 @@ export enum ServerWsMethod {
    * Emitted to other when a member of a lobby leaves the lobby.
    */
   PeerDisconnected = 'lobby_peerDisconnect',
+
+  /**
+   * Emitted by the server when it's received a message from a member
+   * of the relevant lobby. The message will be emitted to ALL members,
+   * including the sender.
+   */
+  MessageReceived = 'lobby_messaging_received',
 }
 
 /**
@@ -53,6 +60,11 @@ export enum ClientWsMethod {
   Ping = 'ping',
   CreateLobby = 'lobby_create',
   JoinLobby = 'lobby_join',
+  /**
+   * Emitted by the client when they'd like to send a message to other
+   * members of the relevant lobby.
+   */
+  Message = 'lobby_messaging_send',
 }
 
 const registeredClientMessagePayloadSchema = z.object({
@@ -64,7 +76,7 @@ const nameRegex = /^\w+[\w ]*$/i;
 const empty = z.object({});
 export const wsMessagePayloadSchemaMap = {
   [ServerWsMethod.Pong]: empty,
-  [ServerWsMethod.MessageError]: z.object({
+  [ServerWsMethod.WsMessageError]: z.object({
     /**
      * The method the client tried to perform that failed the
      * server's validation.
@@ -134,6 +146,14 @@ export const wsMessagePayloadSchemaMap = {
     lobbyId: z.string(),
     peerName: z.string(),
   }),
+  [ServerWsMethod.MessageReceived]: z.object({
+    lobbyId: z.string(),
+    message: z.object({
+      timestamp: z.number(),
+      senderName: z.string(),
+      message: z.string(),
+    }),
+  }),
 
   [ClientWsMethod.Ping]: empty,
   [ClientWsMethod.CreateLobby]: registeredClientMessagePayloadSchema.merge(
@@ -148,6 +168,12 @@ export const wsMessagePayloadSchemaMap = {
     z.object({
       lobbyId: z.string(),
       peerName: z.string().max(50).regex(nameRegex, 'Peer name cannot be only spaces and must be alphanumeric.'),
+    })
+  ),
+  [ClientWsMethod.Message]: registeredClientMessagePayloadSchema.merge(
+    z.object({
+      lobbyId: z.string(),
+      message: z.string().min(1).max(250),
     })
   ),
 };

@@ -32,7 +32,7 @@ export class LobbyRegistry extends Registry<Lobby> {
   addMemberToLobby(lobbyId: string, lobbyClient: LobbyClient): boolean {
     const { item: lobby } = this.getById(lobbyId) ?? {};
 
-    if (lobby && !lobby.isMemberInLobby(lobbyClient) && lobby.numMembers < lobby.maxMembers) {
+    if (lobby && !lobby.isMember(lobbyClient) && lobby.numMembers < lobby.maxMembers) {
       const addSucceeded = lobby.addMember(lobbyClient);
 
       if (addSucceeded) {
@@ -73,8 +73,8 @@ export class LobbyRegistry extends Registry<Lobby> {
   removeMemberFromLobby(lobbyId: string, lobbyClient: LobbyClient) {
     const { item: lobby } = this.getById(lobbyId) ?? {};
 
-    if (lobby && lobby.isMemberInLobby(lobbyClient)) {
-      const isHost = lobby.isMemberHost(lobbyClient);
+    if (lobby && lobby.isMember(lobbyClient)) {
+      const isHost = lobby.isHost(lobbyClient);
 
       if (isHost) {
         this.removeById(lobbyId);

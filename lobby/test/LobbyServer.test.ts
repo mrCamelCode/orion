@@ -47,14 +47,14 @@ describe('LobbyServer', () => {
 
   describe('ws', () => {
     test('sends a message error message when a message is sent with an unknown method', async () => {
-      const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+      const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
       // @ts-ignore
       client.send(encodeWsMessage('notreal', {}));
 
       const [method, payload] = await messageWaiter;
 
-      assertEquals(method, ServerWsMethod.MessageError);
+      assertEquals(method, ServerWsMethod.WsMessageError);
       assert(payload.errors.some((error: string) => error.includes('notreal is unrecognized')));
     });
 
@@ -255,7 +255,7 @@ describe('LobbyServer', () => {
       });
       describe('failure when...', () => {
         test('the payload has no token', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(
@@ -272,10 +272,10 @@ describe('LobbyServer', () => {
 
           const [method] = await messageWaiter;
 
-          assertEquals(method, ServerWsMethod.MessageError);
+          assertEquals(method, ServerWsMethod.WsMessageError);
         });
         test('the payload has no lobby', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(
@@ -292,10 +292,10 @@ describe('LobbyServer', () => {
 
           const [method] = await messageWaiter;
 
-          assertEquals(method, ServerWsMethod.MessageError);
+          assertEquals(method, ServerWsMethod.WsMessageError);
         });
         test('the payload has no host name', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(
@@ -312,10 +312,10 @@ describe('LobbyServer', () => {
 
           const [method] = await messageWaiter;
 
-          assertEquals(method, ServerWsMethod.MessageError);
+          assertEquals(method, ServerWsMethod.WsMessageError);
         });
         test('the payload has no public indicator', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(
@@ -332,10 +332,10 @@ describe('LobbyServer', () => {
 
           const [method] = await messageWaiter;
 
-          assertEquals(method, ServerWsMethod.MessageError);
+          assertEquals(method, ServerWsMethod.WsMessageError);
         });
         test('the payload does not specify max members', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(
@@ -352,7 +352,7 @@ describe('LobbyServer', () => {
 
           const [method] = await messageWaiter;
 
-          assertEquals(method, ServerWsMethod.MessageError);
+          assertEquals(method, ServerWsMethod.WsMessageError);
         });
         test('the client is already the host of another lobby', async () => {
           const lobbyFailureWaiter = waitForMessage(client, ServerWsMethod.CreateLobbyFailure);
@@ -433,7 +433,7 @@ describe('LobbyServer', () => {
       });
       describe('validation', () => {
         test(`the lobby name cannot exceed 50 characters`, async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.CreateLobby, {
@@ -450,7 +450,7 @@ describe('LobbyServer', () => {
           assertEquals(payload.method, ClientWsMethod.CreateLobby);
         });
         test('the host name cannot exceed 50 characters', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.CreateLobby, {
@@ -467,7 +467,7 @@ describe('LobbyServer', () => {
           assertEquals(payload.method, ClientWsMethod.CreateLobby);
         });
         test('the lobby name cannot be only spaces', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.CreateLobby, {
@@ -484,7 +484,7 @@ describe('LobbyServer', () => {
           assertEquals(payload.method, ClientWsMethod.CreateLobby);
         });
         test('the host name cannot be only spaces', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.CreateLobby, {
@@ -501,7 +501,7 @@ describe('LobbyServer', () => {
           assertEquals(payload.method, ClientWsMethod.CreateLobby);
         });
         test('the max members cannot be 0', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.CreateLobby, {
@@ -518,7 +518,7 @@ describe('LobbyServer', () => {
           assertEquals(payload.method, ClientWsMethod.CreateLobby);
         });
         test('the max members cannot be negative', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.CreateLobby, {
@@ -535,7 +535,7 @@ describe('LobbyServer', () => {
           assertEquals(payload.method, ClientWsMethod.CreateLobby);
         });
         test('the max members cannot be more than 64', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.CreateLobby, {
@@ -640,7 +640,7 @@ describe('LobbyServer', () => {
       });
       describe('failure when...', () => {
         test('the payload has no token', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(
@@ -655,10 +655,10 @@ describe('LobbyServer', () => {
 
           const [method] = await messageWaiter;
 
-          assertEquals(method, ServerWsMethod.MessageError);
+          assertEquals(method, ServerWsMethod.WsMessageError);
         });
         test('the payload has no lobbyId', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(
@@ -673,10 +673,10 @@ describe('LobbyServer', () => {
 
           const [method] = await messageWaiter;
 
-          assertEquals(method, ServerWsMethod.MessageError);
+          assertEquals(method, ServerWsMethod.WsMessageError);
         });
         test('the payload has no peerName', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(
@@ -691,7 +691,7 @@ describe('LobbyServer', () => {
 
           const [method] = await messageWaiter;
 
-          assertEquals(method, ServerWsMethod.MessageError);
+          assertEquals(method, ServerWsMethod.WsMessageError);
         });
         test('the client is already the host of another lobby', async () => {
           const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
@@ -860,7 +860,7 @@ describe('LobbyServer', () => {
       });
       describe('validation', () => {
         test('peerName cannot be more than 50 characters', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.JoinLobby, {
@@ -875,7 +875,7 @@ describe('LobbyServer', () => {
           assertEquals(payload.method, ClientWsMethod.JoinLobby);
         });
         test('peerName cannot be only spaces', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.MessageError);
+          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
 
           client.send(
             encodeWsMessage(ClientWsMethod.JoinLobby, {
@@ -888,6 +888,282 @@ describe('LobbyServer', () => {
           const [, payload] = await messageWaiter;
 
           assertEquals(payload.method, ClientWsMethod.JoinLobby);
+        });
+      });
+    });
+
+    describe(`${ClientWsMethod.Message}`, () => {
+      test(`all members are informed when one member sends a message`, async () => {
+        const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+
+        client.send(
+          encodeWsMessage(ClientWsMethod.CreateLobby, {
+            token,
+            lobbyName: 'My lobby',
+            hostName: 'jt',
+            isPublic: true,
+            maxMembers: 3,
+          })
+        );
+
+        const [, { lobbyId }] = await createLobbySuccess;
+
+        const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
+        const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
+
+        peerClient.send(
+          encodeWsMessage(ClientWsMethod.JoinLobby, {
+            token: peerClientToken,
+            lobbyId,
+            peerName: 'Peer JT',
+          })
+        );
+
+        await joinLobbySuccess;
+
+        const messageReceiveds = [client, peerClient].map((c) => waitForMessage(c, ServerWsMethod.MessageReceived));
+
+        peerClient.send(
+          encodeWsMessage(ClientWsMethod.Message, {
+            lobbyId,
+            message: 'Hello, fellow gamers!',
+            token: peerClientToken,
+          })
+        );
+
+        const [[, payload]] = await Promise.all(messageReceiveds);
+
+        assertEquals(payload.message.message, 'Hello, fellow gamers!');
+        assertEquals(payload.message.senderName, 'Peer JT');
+        assert('timestamp' in payload.message);
+
+        peerClient.close();
+      });
+      test(`no members are informed when the sender isn't in the lobby`, async () => {
+        // TODO: Kinda hard to test a negative... Don't love how I'm doing this, but I want
+        // it covered somehow.
+        const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+
+        client.send(
+          encodeWsMessage(ClientWsMethod.CreateLobby, {
+            token,
+            lobbyName: 'My lobby',
+            hostName: 'jt',
+            isPublic: true,
+            maxMembers: 3,
+          })
+        );
+
+        const [, { lobbyId }] = await createLobbySuccess;
+
+        const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
+
+        let messageWasReceived = false;
+        waitForMessage(client, ServerWsMethod.MessageReceived).then(() => (messageWasReceived = true));
+
+        peerClient.send(
+          encodeWsMessage(ClientWsMethod.Message, {
+            lobbyId,
+            message: 'Hello, fellow gamers!',
+            token: peerClientToken,
+          })
+        );
+
+        // For the local test env, 250ms is plenty of time to wait for the
+        // server to send the message if it's going to send it. Don't love
+        // this, but it's difficult to test for the server NOT doing something.
+        assertEquals(
+          await new Promise((resolve) =>
+            setTimeout(() => {
+              resolve(messageWasReceived);
+            }, 250)
+          ),
+          false
+        );
+
+        peerClient.close();
+      });
+      describe(`ws message error when...`, () => {
+        test(`there's no lobbyId`, async () => {
+          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+
+          client.send(
+            encodeWsMessage(ClientWsMethod.CreateLobby, {
+              token,
+              lobbyName: 'My lobby',
+              hostName: 'jt',
+              isPublic: true,
+              maxMembers: 3,
+            })
+          );
+
+          const [, { lobbyId }] = await createLobbySuccess;
+
+          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
+          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
+
+          peerClient.send(
+            encodeWsMessage(ClientWsMethod.JoinLobby, {
+              token: peerClientToken,
+              lobbyId,
+              peerName: 'Peer JT',
+            })
+          );
+
+          await joinLobbySuccess;
+
+          const messageError = waitForMessage(peerClient, ServerWsMethod.WsMessageError);
+
+          peerClient.send(
+            encodeWsMessage(
+              ClientWsMethod.Message,
+              // @ts-ignore
+              {
+                message: 'Hello, fellow gamers!',
+                token: peerClientToken,
+              }
+            )
+          );
+
+          await messageError;
+
+          peerClient.close();
+        });
+        test(`there's no message`, async () => {
+          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+
+          client.send(
+            encodeWsMessage(ClientWsMethod.CreateLobby, {
+              token,
+              lobbyName: 'My lobby',
+              hostName: 'jt',
+              isPublic: true,
+              maxMembers: 3,
+            })
+          );
+
+          const [, { lobbyId }] = await createLobbySuccess;
+
+          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
+          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
+
+          peerClient.send(
+            encodeWsMessage(ClientWsMethod.JoinLobby, {
+              token: peerClientToken,
+              lobbyId,
+              peerName: 'Peer JT',
+            })
+          );
+
+          await joinLobbySuccess;
+
+          const messageError = waitForMessage(peerClient, ServerWsMethod.WsMessageError);
+
+          peerClient.send(
+            encodeWsMessage(
+              ClientWsMethod.Message,
+              // @ts-ignore
+              {
+                lobbyId,
+                token: peerClientToken,
+              }
+            )
+          );
+
+          await messageError;
+
+          peerClient.close();
+        });
+        test(`the message is empty`, async () => {
+          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+
+          client.send(
+            encodeWsMessage(ClientWsMethod.CreateLobby, {
+              token,
+              lobbyName: 'My lobby',
+              hostName: 'jt',
+              isPublic: true,
+              maxMembers: 3,
+            })
+          );
+
+          const [, { lobbyId }] = await createLobbySuccess;
+
+          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
+          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
+
+          peerClient.send(
+            encodeWsMessage(ClientWsMethod.JoinLobby, {
+              token: peerClientToken,
+              lobbyId,
+              peerName: 'Peer JT',
+            })
+          );
+
+          await joinLobbySuccess;
+
+          const messageError = waitForMessage(peerClient, ServerWsMethod.WsMessageError);
+
+          peerClient.send(
+            encodeWsMessage(
+              ClientWsMethod.Message,
+              // @ts-ignore
+              {
+                lobbyId,
+                message: '',
+                token: peerClientToken,
+              }
+            )
+          );
+
+          await messageError;
+
+          peerClient.close();
+        });
+        test(`the message is greater than 250 characters`, async () => {
+          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+
+          client.send(
+            encodeWsMessage(ClientWsMethod.CreateLobby, {
+              token,
+              lobbyName: 'My lobby',
+              hostName: 'jt',
+              isPublic: true,
+              maxMembers: 3,
+            })
+          );
+
+          const [, { lobbyId }] = await createLobbySuccess;
+
+          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
+          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
+
+          peerClient.send(
+            encodeWsMessage(ClientWsMethod.JoinLobby, {
+              token: peerClientToken,
+              lobbyId,
+              peerName: 'Peer JT',
+            })
+          );
+
+          await joinLobbySuccess;
+
+          const messageError = waitForMessage(peerClient, ServerWsMethod.WsMessageError);
+
+          peerClient.send(
+            encodeWsMessage(ClientWsMethod.Message, {
+              lobbyId,
+              message: new Array(251)
+                .fill(0)
+                .map(() => 'a')
+                .join(''),
+              token: peerClientToken,
+            })
+          );
+
+          await messageError;
+
+          peerClient.close();
         });
       });
     });

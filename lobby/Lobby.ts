@@ -47,7 +47,7 @@ export class Lobby {
    * is at capacity or the member is already in the lobby.
    */
   addMember(member: LobbyClient): boolean {
-    if (!this.isMemberInLobby(member) && !this.isFull) {
+    if (!this.isMember(member) && !this.isFull) {
       this.#members.push(member);
 
       return true;
@@ -60,11 +60,11 @@ export class Lobby {
     this.#members = this.#members.filter((existingMember) => !this.#doLobbyClientsMatch(existingMember, member));
   }
 
-  isMemberHost(member: LobbyClient): boolean {
+  isHost(member: LobbyClient): boolean {
     return this.#members.find((existingMember) => this.#doLobbyClientsMatch(existingMember, member)) === this.host;
   }
 
-  isMemberInLobby(member: LobbyClient): boolean {
+  isMember(member: LobbyClient): boolean {
     return this.#members.some((existingMember) => this.#doLobbyClientsMatch(existingMember, member));
   }
 

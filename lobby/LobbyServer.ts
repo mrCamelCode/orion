@@ -157,6 +157,70 @@ export class LobbyServer {
           lobbyId: newLobbyId,
         });
       }
+    } else {
+      logger.warn('Unregistered client attempted to host a lobby.');
+
+      getOutboundMessage(ServerWsMethod.CreateLobbyFailure, {
+        errors: [`The client is unregistered. Try reconnecting.`],
+      });
+    }
+  };
+
+  #handleJoinLobby: OutboundMessage<ClientWsMethod.JoinLobby> = (payload) => {
+    const { lobbyId, peerName, token } = payload;
+
+    const { item: networkClient, id: networkClientId } = this.#networkClientRegistry.getByToken(token) ?? {};
+    if (networkClient) {
+      if (this.#lobbyRegistry.isNetworkClientInLobby(networkClient)) {
+        return getOutboundMessage(ServerWsMethod.JoinLobbyFailure, {
+          lobbyId,
+          errors: [`The client is already in a lobby and cannot join another.`],
+        });
+      } else {
+        const { item: lobby } = this.#lobbyRegistry.getById(lobbyId) ?? {};
+
+        if (lobby) {
+          if (!lobby.isFull) {
+            const peerLobbyClient = new LobbyClient(peerName, networkClient);
+
+            const addSucceeded = this.#lobbyRegistry.addMemberToLobby(lobbyId, peerLobbyClient);
+
+            if (addSucceeded) {
+              logger.info(`Client ${networkClientId} successfully joined lobby ${lobbyId}`);
+            }
+
+            return addSucceeded
+              ? getOutboundMessage(ServerWsMethod.JoinLobbySuccess, {
+                  lobbyId,
+                  lobbyName: lobby.name,
+                  lobbyMembers: lobby.members.map((member) => member.name),
+                })
+              : getOutboundMessage(ServerWsMethod.JoinLobbyFailure, {
+                  lobbyId,
+                  errors: [`The lobby is full or the client is already in the lobby.`],
+                });
+          } else {
+            return getOutboundMessage(ServerWsMethod.JoinLobbyFailure, {
+              lobbyId,
+              errors: [`The lobby is full.`],
+            });
+          }
+        } else {
+          logger.info(`Client ${networkClientId} attempted to join a non-existent lobby.`);
+
+          return getOutboundMessage(ServerWsMethod.JoinLobbyFailure, {
+            lobbyId,
+            errors: [`Lobby ${lobbyId} doesn't exist.`],
+          });
+        }
+      }
+    } else {
+      logger.warn('Unregistered client attempted to join a lobby.');
+
+      getOutboundMessage(ServerWsMethod.JoinLobbyFailure, {
+        lobbyId,
+        errors: [`The client is unregistered. Try reconnecting.`],
+      });
     }
   };
 
@@ -187,9 +251,7 @@ export class LobbyServer {
       payload: {},
     }),
     [ClientWsMethod.CreateLobby]: this.#handleCreateLobby,
-    [ClientWsMethod.JoinLobby]: () => {
-      throw new Error('TODO');
-    },
+    [ClientWsMethod.JoinLobby]: this.#handleJoinLobby,
     [ClientWsMethod.LeaveLobby]: () => {
       throw new Error('TODO');
     },

@@ -21,6 +21,8 @@ export enum ServerWsMethod {
   ClientRegistered = 'client_registered',
   CreateLobbySuccess = 'lobby_create_success',
   CreateLobbyFailure = 'lobby_create_failure',
+  JoinLobbySuccess = 'lobby_join_success',
+  JoinLobbyFailure = 'lobby_join_failure',
   /**
    * Emitted when a lobby is closed. A lobby could be closed because the host
    * leaves or disconnects unexpectedly.
@@ -62,12 +64,24 @@ const empty = z.object({});
 export const wsMessagePayloadSchemaMap = {
   [ServerWsMethod.Pong]: empty,
   [ServerWsMethod.MessageError]: z.object({
+    /**
+     * The method the client tried to perform that failed the
+     * server's validation.
+     */
     method: z.string(),
+    /**
+     * Why the message is problematic. These errors are produced
+     * as the result of fairly generic tests against the message
+     * itself, which is something the end-user wouldn't necessarily
+     * know about. It's likely best to not show these errors to the
+     * end-user.
+     */
     errors: z.array(z.string()),
   }),
   [ServerWsMethod.ClientRegistered]: z.object({
     token: z.string(),
   }),
+
   [ServerWsMethod.CreateLobbySuccess]: z.object({
     lobbyName: z.string(),
     /**
@@ -78,8 +92,35 @@ export const wsMessagePayloadSchemaMap = {
     lobbyId: z.string(),
   }),
   [ServerWsMethod.CreateLobbyFailure]: z.object({
+    /**
+     * The reasons why the client couldn't create the lobby.
+     * These are intended to be readable and can be displayed
+     * to the user.
+     */
     errors: z.array(z.string()),
   }),
+
+  [ServerWsMethod.JoinLobbySuccess]: z.object({
+    lobbyName: z.string(),
+    lobbyId: z.string(),
+    /**
+     * The names of the other members of the lobby.
+     */
+    lobbyMembers: z.array(z.string()),
+  }),
+  [ServerWsMethod.JoinLobbyFailure]: z.object({
+    /**
+     * The ID of the lobby the client attempted to join.
+     */
+    lobbyId: z.string(),
+    /**
+     * The reasons why the client couldn't join the lobby.
+     * These are intended to be readable and can be displayed
+     * to the user.
+     */
+    errors: z.array(z.string()),
+  }),
+
   [ServerWsMethod.LobbyClosed]: z.object({
     lobbyId: z.string(),
     lobbyName: z.string(),
@@ -101,7 +142,12 @@ export const wsMessagePayloadSchemaMap = {
       maxMembers: z.number().min(1).max(64),
     })
   ),
-  [ClientWsMethod.JoinLobby]: registeredClientMessagePayloadSchema.merge(z.object({})),
+  [ClientWsMethod.JoinLobby]: registeredClientMessagePayloadSchema.merge(
+    z.object({
+      lobbyId: z.string(),
+      peerName: z.string().max(50).regex(nameRegex, 'Peer name cannot be only spaces and must be alphanumeric.'),
+    })
+  ),
   [ClientWsMethod.LeaveLobby]: registeredClientMessagePayloadSchema.merge(
     z.object({
       lobbyId: z.string(),

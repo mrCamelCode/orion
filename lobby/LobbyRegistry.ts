@@ -29,24 +29,30 @@ export class LobbyRegistry extends Registry<Lobby> {
    * @param lobbyId - The ID of the lobby to add the new member to.
    * @param lobbyClient - The new member to add.
    */
-  addMemberToLobby(lobbyId: string, lobbyClient: LobbyClient) {
+  addMemberToLobby(lobbyId: string, lobbyClient: LobbyClient): boolean {
     const { item: lobby } = this.getById(lobbyId) ?? {};
 
     if (lobby && !lobby.isMemberInLobby(lobbyClient) && lobby.numMembers < lobby.maxMembers) {
-      lobby.addMember(lobbyClient);
+      const addSucceeded = lobby.addMember(lobbyClient);
 
-      this.#networkClientToLobbyMapping[lobbyClient.networkClient.token] = lobbyId;
+      if (addSucceeded) {
+        this.#networkClientToLobbyMapping[lobbyClient.networkClient.token] = lobbyId;
 
-      const membersToNotify = lobby.otherMembers(lobbyClient);
+        const membersToNotify = lobby.otherMembers(lobbyClient);
 
-      sendToSockets(
-        encodeWsMessage(ServerWsMethod.PeerConnected, {
-          peerName: lobbyClient.name,
-          lobbyId,
-        }),
-        ...getSocketsFromLobbyClients(membersToNotify)
-      );
+        sendToSockets(
+          encodeWsMessage(ServerWsMethod.PeerConnected, {
+            peerName: lobbyClient.name,
+            lobbyId,
+          }),
+          ...getSocketsFromLobbyClients(membersToNotify)
+        );
+      }
+
+      return addSucceeded;
     }
+
+    return false;
   }
 
   /**

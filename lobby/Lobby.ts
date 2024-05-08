@@ -11,6 +11,10 @@ export class Lobby {
     return this.#members.length;
   }
 
+  get isFull(): boolean {
+    return this.numMembers >= this.maxMembers;
+  }
+
   constructor(
     public readonly name: string,
     public readonly host: LobbyClient,
@@ -39,12 +43,17 @@ export class Lobby {
    *
    * @param member - The member to add.
    *
-   * @throws {Error} If the lobby is full.
+   * @returns Whether the member was added. Addition fails if the lobby
+   * is at capacity or the member is already in the lobby.
    */
-  addMember(member: LobbyClient) {
-    if (!this.isMemberInLobby(member)) {
+  addMember(member: LobbyClient): boolean {
+    if (!this.isMemberInLobby(member) && !this.isFull) {
       this.#members.push(member);
+
+      return true;
     }
+
+    return false;
   }
 
   removeMember(member: LobbyClient) {

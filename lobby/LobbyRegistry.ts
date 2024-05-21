@@ -1,3 +1,4 @@
+import { logger } from '../logging/Logger.ts';
 import { NetworkClient } from '../network/NetworkClient.ts';
 import { ServerWsMethod } from '../network/network.model.ts';
 import { encodeWsMessage, sendToSockets } from '../network/network.util.ts';
@@ -77,6 +78,8 @@ export class LobbyRegistry extends Registry<Lobby> {
       const isHost = lobby.isHost(lobbyClient);
 
       if (isHost) {
+        logger.info(`The host is being removed from lobby ${lobbyId}. The lobby will be closed.`);
+
         this.removeById(lobbyId);
       } else {
         const membersToNotify = lobby.otherMembers(lobbyClient);
@@ -168,3 +171,5 @@ export class LobbyRegistry extends Registry<Lobby> {
 function getSocketsFromLobbyClients(clients: LobbyClient[]) {
   return clients.map((client) => client.networkClient.socket);
 }
+
+export const lobbyRegistry = new LobbyRegistry();

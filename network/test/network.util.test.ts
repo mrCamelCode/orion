@@ -6,10 +6,13 @@ import { decodeWsMessage, encodeWsMessage } from '../network.util.ts';
 describe('Network Util', () => {
   describe('encodeWsMessage', () => {
     test('puts info in format of method:payload', () => {
-      assert(encodeWsMessage(ServerWsMethod.Pong, {}).split(':').length === 2);
+      assert(encodeWsMessage(ServerWsMethod.ClientRegistered, { token: '123' }).split(':').length === 2);
     });
     test('the payload is base64-encoded', () => {
-      assertEquals(encodeWsMessage(ServerWsMethod.Pong, {}), 'pong:e30=');
+      assertEquals(
+        encodeWsMessage(ServerWsMethod.ClientRegistered, { token: '123' }),
+        'client_registered:eyJ0b2tlbiI6IjEyMyJ9'
+      );
     });
   });
 

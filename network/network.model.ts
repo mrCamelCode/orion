@@ -6,9 +6,15 @@ import { z } from 'zod';
  * Clients need to have handlers for these methods.
  */
 export enum ServerWsMethod {
-  Pong = 'pong',
   /**
    * There was a problem with a websocket message the client sent to the server.
+   * This occurs when the error is in the message itself and is akin to a bad
+   * request. If you receive this message, your message failed basic validation
+   * of the expected shape and/or constraints of the contents of the message.
+   * 
+   * Not all bad messages result in this message being sent out. In those cases,
+   * the server simply ignores the message. See the API documentation for the
+   * expected values for messages your client will send.
    */
   WsMessageError = 'wsMessage_error',
 
@@ -20,12 +26,6 @@ export enum ServerWsMethod {
    * a proper token.
    */
   ClientRegistered = 'client_registered',
-
-  CreateLobbySuccess = 'lobby_create_success',
-  CreateLobbyFailure = 'lobby_create_failure',
-
-  JoinLobbySuccess = 'lobby_join_success',
-  JoinLobbyFailure = 'lobby_join_failure',
 
   /**
    * Emitted when a lobby is closed. A lobby could be closed because the host
@@ -57,25 +57,26 @@ export enum ServerWsMethod {
  * The server needs to have handlers for these methods.
  */
 export enum ClientWsMethod {
-  Ping = 'ping',
-  CreateLobby = 'lobby_create',
-  JoinLobby = 'lobby_join',
   /**
    * Emitted by the client when they'd like to send a message to other
    * members of the relevant lobby.
    */
   Message = 'lobby_messaging_send',
+
+  /**
+   * Emitted by the host of the relevant lobby when they'd like to start
+   * the peer-to-peer mediation phase. During this phase, the server
+   * attempts to facilitate keeping all clients on the same page as
+   * they try to connect directly to one another.
+   */
+  StartPtpMediation = 'ptpMediation_start',
 }
 
 const registeredClientMessagePayloadSchema = z.object({
   token: z.string(),
 });
 
-const nameRegex = /^\w+[\w ]*$/i;
-
-const empty = z.object({});
 export const wsMessagePayloadSchemaMap = {
-  [ServerWsMethod.Pong]: empty,
   [ServerWsMethod.WsMessageError]: z.object({
     /**
      * The method the client tried to perform that failed the
@@ -95,49 +96,11 @@ export const wsMessagePayloadSchemaMap = {
     token: z.string(),
   }),
 
-  [ServerWsMethod.CreateLobbySuccess]: z.object({
-    lobbyName: z.string(),
-    /**
-     * This ID can be used by other clients to join the lobby.
-     * It should be considered protected information; only those
-     * with permission to join the lobby should know it.
-     */
-    lobbyId: z.string(),
-  }),
-  [ServerWsMethod.CreateLobbyFailure]: z.object({
-    /**
-     * The reasons why the client couldn't create the lobby.
-     * These are intended to be readable and can be displayed
-     * to the user.
-     */
-    errors: z.array(z.string()),
-  }),
-
-  [ServerWsMethod.JoinLobbySuccess]: z.object({
-    lobbyName: z.string(),
-    lobbyId: z.string(),
-    /**
-     * The names of the other members of the lobby.
-     */
-    lobbyMembers: z.array(z.string()),
-  }),
-  [ServerWsMethod.JoinLobbyFailure]: z.object({
-    /**
-     * The ID of the lobby the client attempted to join.
-     */
-    lobbyId: z.string(),
-    /**
-     * The reasons why the client couldn't join the lobby.
-     * These are intended to be readable and can be displayed
-     * to the user.
-     */
-    errors: z.array(z.string()),
-  }),
-
   [ServerWsMethod.LobbyClosed]: z.object({
     lobbyId: z.string(),
     lobbyName: z.string(),
   }),
+
   [ServerWsMethod.PeerConnected]: z.object({
     lobbyId: z.string(),
     peerName: z.string(),
@@ -146,6 +109,7 @@ export const wsMessagePayloadSchemaMap = {
     lobbyId: z.string(),
     peerName: z.string(),
   }),
+
   [ServerWsMethod.MessageReceived]: z.object({
     lobbyId: z.string(),
     message: z.object({
@@ -155,35 +119,25 @@ export const wsMessagePayloadSchemaMap = {
     }),
   }),
 
-  [ClientWsMethod.Ping]: empty,
-  [ClientWsMethod.CreateLobby]: registeredClientMessagePayloadSchema.merge(
-    z.object({
-      hostName: z.string().max(50).regex(nameRegex, 'Host name cannot be only spaces and must be alphanumeric.'),
-      lobbyName: z.string().max(50).regex(nameRegex, 'Lobby name cannot be only spaces and must be alphanumeric.'),
-      isPublic: z.boolean(),
-      maxMembers: z.number().min(1).max(64),
-    })
-  ),
-  [ClientWsMethod.JoinLobby]: registeredClientMessagePayloadSchema.merge(
-    z.object({
-      lobbyId: z.string(),
-      peerName: z.string().max(50).regex(nameRegex, 'Peer name cannot be only spaces and must be alphanumeric.'),
-    })
-  ),
   [ClientWsMethod.Message]: registeredClientMessagePayloadSchema.merge(
     z.object({
       lobbyId: z.string(),
       message: z.string().min(1).max(250),
     })
   ),
+  [ClientWsMethod.StartPtpMediation]: registeredClientMessagePayloadSchema.merge(
+    z.object({
+      lobbyId: z.string(),
+    })
+  ),
 };
 
 // Convenience for WsMessagePayloadMap type.
-const wsMessagepayloadSchemaMapSchema = z.object(wsMessagePayloadSchemaMap);
+const wsMessagePayloadSchemaMapSchema = z.object(wsMessagePayloadSchemaMap);
 
 export type WsMethod = keyof typeof wsMessagePayloadSchemaMap;
 
-export type WsMessagePayloadMap = z.infer<typeof wsMessagepayloadSchemaMapSchema>;
+export type WsMessagePayloadMap = z.infer<typeof wsMessagePayloadSchemaMapSchema>;
 
 export type OutboundMessage<T extends WsMethod> = (payload: WsMessagePayloadMap[T]) =>
   | {

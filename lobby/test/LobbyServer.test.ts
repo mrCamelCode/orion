@@ -1,18 +1,27 @@
-import { assert, assertEquals, assertExists } from 'assert';
+import { assert, assertEquals } from 'assert';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, test } from 'bdd';
 import { restore } from 'mock';
+import { HttpMethod } from 'potami';
 import { ClientWsMethod, ServerWsMethod, WsMessagePayloadMap, WsMethod } from '../../network/network.model.ts';
 import { decodeWsMessage, encodeWsMessage } from '../../network/network.util.ts';
 import { IdToken } from '../../shared/model.ts';
+import { ValueOf } from '../../types/types.ts';
 import { stubLogger } from '../../util/testing.util.ts';
 import { waitFor } from '../../util/util.ts';
 import { LobbyServer } from '../LobbyServer.ts';
+import { JoinLobbyPayload } from '../http/api/lobbies/lobbies.schema.ts';
 
 const HTTP_PORT = 3000;
-const WS_CONNECTION_URL = `ws://localhost:${HTTP_PORT}`;
-const HTTP_CONNECTION_URL = `http://localhost:${HTTP_PORT}`;
-const API_CONNECTION_URL = `${HTTP_CONNECTION_URL}/api`;
 
+const LOBBIES_BASE_PATH = '/lobbies';
+const GET_PUBLIC_LOBBIES_PATH = LOBBIES_BASE_PATH;
+const CREATE_LOBBY_PATH = LOBBIES_BASE_PATH;
+
+function getJoinLobbyPath(lobbyId: string): string {
+  return `${LOBBIES_BASE_PATH}/${lobbyId}/join`;
+}
+
+let portCounter = 0;
 let server: LobbyServer;
 
 // Given that I actually start the server and create a client,
@@ -21,61 +30,842 @@ let server: LobbyServer;
 // leaving it untested just because I don't want to set up a full
 // and proper end-to-end testing environment.
 describe('LobbyServer', () => {
-  let client: WebSocket;
-  let token: IdToken;
-
   beforeAll(() => {
     stubLogger();
   });
   beforeEach(async () => {
     server = new LobbyServer();
 
-    server.start(HTTP_PORT);
-
-    const clientCreationResult = await createClient(WS_CONNECTION_URL);
-
-    client = clientCreationResult.client;
-    token = clientCreationResult.token;
+    await server.start(HTTP_PORT + portCounter);
   });
   afterEach(async () => {
-    client.close();
+    portCounter++;
+
     await server.stop();
   });
   afterAll(() => {
     restore();
   });
 
-  describe('ws', () => {
-    test('sends a message error message when a message is sent with an unknown method', async () => {
-      const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
+  describe('http', () => {
+    describe('Phase 1 Behaviour - Lobbying', () => {
+      describe('lobby creation', () => {
+        describe('success when...', () => {
+          test('the payload is good and the client is available to host', async () => {
+            const { client, token } = await createClient();
 
-      // @ts-ignore
-      client.send(encodeWsMessage('notreal', {}));
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
 
-      const [method, payload] = await messageWaiter;
+            const payload = await response.json();
 
-      assertEquals(method, ServerWsMethod.WsMessageError);
-      assert(payload.errors.some((error: string) => error.includes('notreal is unrecognized')));
-    });
+            assertEquals(response.status, 201);
 
-    describe('ping', () => {
-      test('returns pong', async () => {
-        const messageWaiter = waitForMessage(client, ServerWsMethod.Pong);
+            assertEquals(payload.lobbyName, 'My lobby');
+            assert('lobbyId' in payload);
 
-        client.send(encodeWsMessage(ClientWsMethod.Ping, {}));
+            client.close();
+          });
+        });
 
-        const [method, payload] = await messageWaiter;
+        describe('failure when...', () => {
+          test('the payload has no token', async () => {
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
 
-        assertEquals(method, ServerWsMethod.Pong);
-        assertEquals(payload, {});
+            assertEquals(response.status, 400);
+
+            cleanupResponses(response);
+          });
+          test('the payload has no lobby name', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            cleanupResponses(response);
+            client.close();
+          });
+          test('the payload has no host name', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'My lobby',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            cleanupResponses(response);
+            client.close();
+          });
+          test('the payload has no public indicator', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            cleanupResponses(response);
+            client.close();
+          });
+          test('the payload does not specify max members', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            cleanupResponses(response);
+            client.close();
+          });
+          test('the client is already the host of another lobby', async () => {
+            const { client, token } = await createClient();
+
+            const firstLobbyResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(firstLobbyResponse.status, 201);
+
+            const secondLobbyResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'Another lobby',
+                hostName: 'another jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const payload = await secondLobbyResponse.json();
+
+            assertEquals(secondLobbyResponse.status, 409);
+
+            assert(payload.errors.some((error: string) => error.includes('cannot be the host of a new lobby')));
+
+            cleanupResponses(firstLobbyResponse, secondLobbyResponse);
+            client.close();
+          });
+          test('the client is already in another lobby', async () => {
+            const { client: host, token: hostToken } = await createClient();
+            const { client: peer, token: peerToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                peerName: 'peer homie',
+              }),
+            });
+
+            assertEquals(joinResponse.status, 200);
+
+            const peerHostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'New lobby',
+                hostName: 'peer jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const { errors } = await peerHostResponse.json();
+
+            assertEquals(peerHostResponse.status, 409);
+            assert(errors.some((error: string) => error.includes('already in a lobby')));
+
+            host.close();
+            peer.close();
+
+            cleanupResponses(hostResponse, joinResponse, peerHostResponse);
+          });
+        });
+        describe('validation', () => {
+          test(`the lobby name cannot exceed 50 characters`, async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: '123456789012345678901234567890123456789012345678901234567890',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            client.close();
+            cleanupResponses(response);
+          });
+          test('the host name cannot exceed 50 characters', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'my lobby',
+                hostName: '123456789012345678901234567890123456789012345678901234567890',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            client.close();
+            cleanupResponses(response);
+          });
+          test('the lobby name cannot be only spaces', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: '  ',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            client.close();
+            cleanupResponses(response);
+          });
+          test('the host name cannot be only spaces', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'lobby',
+                hostName: ' ',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            client.close();
+            cleanupResponses(response);
+          });
+          test('the max members cannot be 0', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'lobby',
+                hostName: ' ',
+                isPublic: true,
+                maxMembers: 0,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            client.close();
+            cleanupResponses(response);
+          });
+          test('the max members cannot be negative', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'lobby',
+                hostName: ' ',
+                isPublic: true,
+                maxMembers: -2,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            client.close();
+            cleanupResponses(response);
+          });
+          test('the max members cannot be more than 64', async () => {
+            const { client, token } = await createClient();
+
+            const response = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token,
+                lobbyName: 'lobby',
+                hostName: ' ',
+                isPublic: true,
+                maxMembers: 65,
+              }),
+            });
+
+            assertEquals(response.status, 400);
+
+            client.close();
+            cleanupResponses(response);
+          });
+        });
+      });
+      describe('lobby joining', () => {
+        test('members of the lobby are notified of a peer connecting, and the response contains all required information', async () => {
+          const { client: host, token: hostToken } = await createClient();
+
+          const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
+              token: hostToken,
+              lobbyName: 'My lobby',
+              hostName: 'jt',
+              isPublic: true,
+              maxMembers: 3,
+            }),
+          });
+
+          const hostPayload = await hostResponse.json();
+
+          assertEquals(hostResponse.status, 201);
+
+          const { client: peer, token: peerToken } = await createClient();
+          const firstHostPeerConnected = waitForMessage(host, ServerWsMethod.PeerConnected);
+
+          const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
+              token: peerToken,
+              peerName: 'peer homie',
+            }),
+          });
+
+          await firstHostPeerConnected;
+
+          const joinPayload = await joinResponse.json();
+
+          assert('lobbyId' in joinPayload);
+          assertEquals(joinResponse.status, 200);
+
+          const peerPeerConnected = waitForMessage(peer, ServerWsMethod.PeerConnected);
+          const secondHostPeerConnected = waitForMessage(host, ServerWsMethod.PeerConnected);
+          const { client: otherPeer, token: otherPeerToken } = await createClient();
+
+          const otherJoinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
+              token: otherPeerToken,
+              peerName: 'other peer homie',
+            }),
+          });
+
+          const otherJoinPayload = await otherJoinResponse.json();
+
+          await peerPeerConnected;
+          await secondHostPeerConnected;
+
+          [joinPayload, otherJoinPayload].forEach((payload) => {
+            assert('lobbyId' in payload);
+            assertEquals(payload.lobbyName, 'My lobby');
+            assertEquals(payload.host, 'jt');
+          });
+
+          assertEquals(joinPayload.lobbyMembers, ['jt', 'peer homie']);
+          assertEquals(otherJoinPayload.lobbyMembers, ['jt', 'peer homie', 'other peer homie']);
+
+          host.close();
+          peer.close();
+          otherPeer.close();
+          cleanupResponses(hostResponse, joinResponse, otherJoinResponse);
+        });
+        describe('success when...', () => {
+          test('the payload is good and the client can join the lobby', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                peerName: 'peer homie',
+              }),
+            });
+
+            const joinPayload = await joinResponse.json();
+
+            assertEquals(joinResponse.status, 200);
+            assert('lobbyId' in joinPayload);
+            assertEquals(joinPayload.lobbyName, 'My lobby');
+            assertEquals(joinPayload.host, 'jt');
+            assertEquals(joinPayload.lobbyMembers, ['jt', 'peer homie']);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, joinResponse);
+          });
+        });
+        describe('failure when...', () => {
+          test('the payload has no token', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                peerName: 'peer homie',
+              }),
+            });
+
+            assertEquals(joinResponse.status, 400);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, joinResponse);
+          });
+          test('the payload has no peerName', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+              }),
+            });
+
+            assertEquals(joinResponse.status, 400);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, joinResponse);
+          });
+          test('the specified lobby does not exist', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(
+              `${getHttpConnectionUrl()}${getJoinLobbyPath(
+                (hostPayload.lobbyId as string).split('').reverse().join('')
+              )}`,
+              {
+                method: HttpMethod.Post,
+                body: JSON.stringify({
+                  token: peerToken,
+                  peerName: 'peer homie',
+                }),
+              }
+            );
+
+            assertEquals(joinResponse.status, 409);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, joinResponse);
+          });
+          test('the client is already the host of another lobby', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const otherHostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                lobbyName: 'Another lobby',
+                hostName: 'jt jkdfq',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            assertEquals(otherHostResponse.status, 201);
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                peerName: 'peer homie',
+              }),
+            });
+
+            assertEquals(joinResponse.status, 409);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, otherHostResponse, joinResponse);
+          });
+          test('the client is already in another lobby', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: otherHost, token: otherHostToken } = await createClient();
+
+            const otherHostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: otherHostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const otherHostPayload = await otherHostResponse.json();
+
+            assertEquals(otherHostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                peerName: 'peer homie',
+              }),
+            });
+
+            assertEquals(joinResponse.status, 200);
+
+            const otherJoinResponse = await fetch(
+              `${getHttpConnectionUrl()}${getJoinLobbyPath(otherHostPayload.lobbyId)}`,
+              {
+                method: HttpMethod.Post,
+                body: JSON.stringify({
+                  token: peerToken,
+                  peerName: 'peer homie',
+                }),
+              }
+            );
+
+            assertEquals(otherJoinResponse.status, 409);
+
+            host.close();
+            peer.close();
+            otherHost.close();
+            cleanupResponses(hostResponse, otherHostResponse, joinResponse, otherJoinResponse);
+          });
+          test('the lobby is full', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 1,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                peerName: 'peer homie',
+              }),
+            });
+
+            assertEquals(joinResponse.status, 409);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, joinResponse);
+          });
+          test('someone with the requested name is already in the lobby', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                peerName: 'jt',
+              }),
+            });
+
+            assertEquals(joinResponse.status, 409);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, joinResponse);
+          });
+        });
+        describe('validation', () => {
+          test('peerName cannot be more than 50 characters', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                peerName: '123456789012345678901234567890123456789012345678901234567890',
+              }),
+            });
+
+            assertEquals(joinResponse.status, 400);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, joinResponse);
+          });
+          test('peerName cannot be only spaces', async () => {
+            const { client: host, token: hostToken } = await createClient();
+
+            const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: hostToken,
+                lobbyName: 'My lobby',
+                hostName: 'jt',
+                isPublic: true,
+                maxMembers: 3,
+              }),
+            });
+
+            const hostPayload = await hostResponse.json();
+
+            assertEquals(hostResponse.status, 201);
+
+            const { client: peer, token: peerToken } = await createClient();
+
+            const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+              method: HttpMethod.Post,
+              body: JSON.stringify({
+                token: peerToken,
+                peerName: '  ',
+              }),
+            });
+
+            assertEquals(joinResponse.status, 400);
+
+            host.close();
+            peer.close();
+            cleanupResponses(hostResponse, joinResponse);
+          });
+        });
       });
     });
 
+    describe('Phase 2 Behaviour - PTP Mediation', () => {});
+  });
+
+  describe('ws', () => {
     describe('connection', () => {
       test('server responds with registration success indication and token on successful connection', async () => {
         let method: WsMethod;
         let payload: any;
-        const { client: newClient } = await createClient(WS_CONNECTION_URL, {
+        const { client: newClient } = await createClient(undefined, {
           [ServerWsMethod.ClientRegistered]: (receivedMethod, receivedPayload) => {
             method = receivedMethod;
             payload = receivedPayload;
@@ -95,124 +885,136 @@ describe('LobbyServer', () => {
     describe('disconnection', () => {
       describe('lobby cleanup', () => {
         test('lobbies are removed when the host leaves', async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+          const { client, token } = await createClient();
 
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
+          const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
               token,
               lobbyName: 'My lobby',
               hostName: 'jt',
               isPublic: true,
               maxMembers: 3,
-            })
-          );
+            }),
+          });
 
-          const [, { lobbyId }] = await createLobbySuccess;
+          assertEquals(hostResponse.status, 201);
 
-          const { client: otherClient, token: otherClientToken } = await createClient(WS_CONNECTION_URL);
+          const hostPayload = await hostResponse.json();
+
+          const { client: otherClient, token: otherClientToken } = await createClient();
           const otherClientLobbyClosed = waitForMessage(otherClient, ServerWsMethod.LobbyClosed);
-          const otherClientJoinLobby = waitForMessage(otherClient, ServerWsMethod.JoinLobbySuccess);
 
-          otherClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
+          const joinResponse = await fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
               token: otherClientToken,
-              lobbyId,
-              peerName: 'peer',
-            })
-          );
+              peerName: 'peer homie',
+            }),
+          });
 
-          await otherClientJoinLobby;
+          assertEquals(joinResponse.status, 200);
 
-          const response = await (await fetch(`${API_CONNECTION_URL}/lobbies`)).json();
+          const publicLobbiesResponse = await (
+            await fetch(`${getHttpConnectionUrl()}${GET_PUBLIC_LOBBIES_PATH}`)
+          ).json();
 
-          assertEquals(response.lobbies.length, 1);
+          assertEquals(publicLobbiesResponse.lobbies.length, 1);
 
           // Closing the connection should trigger a cleanup on the server side.
           client.close();
 
           await otherClientLobbyClosed;
 
-          const newResponse = await (await fetch(`${API_CONNECTION_URL}/lobbies`)).json();
+          const newPublicLobbiesResponse = await (
+            await fetch(`${getHttpConnectionUrl()}${GET_PUBLIC_LOBBIES_PATH}`)
+          ).json();
 
-          assertEquals(newResponse.lobbies.length, 0);
+          assertEquals(newPublicLobbiesResponse.lobbies.length, 0);
 
           otherClient.close();
+
+          cleanupResponses(hostResponse, joinResponse, publicLobbiesResponse, newPublicLobbiesResponse);
         });
         test('all peers receive a message that the lobby was closed when the host leaves', async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-          const otherClients = await Promise.all(new Array(5).fill(0).map(() => createClient(WS_CONNECTION_URL)));
+          const { client: host, token: hostToken } = await createClient();
 
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
+          const otherClients = await Promise.all(new Array(5).fill(0).map(() => createClient()));
+
+          const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
+              token: hostToken,
               lobbyName: 'My lobby',
               hostName: 'jt',
               isPublic: true,
               maxMembers: 10,
+            }),
+          });
+
+          assertEquals(hostResponse.status, 201);
+
+          const hostPayload = await hostResponse.json();
+
+          const otherClientsLobbyClosed = otherClients.map((otherClient) =>
+            waitForMessage(otherClient.client, ServerWsMethod.LobbyClosed)
+          );
+
+          const joinResponses = await Promise.all(
+            otherClients.map((otherClient, i) => {
+              return fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+                method: HttpMethod.Post,
+                body: JSON.stringify({
+                  token: otherClient.token,
+                  peerName: `peer homie ${i}`,
+                }),
+              });
             })
           );
 
-          const [, { lobbyId }] = await createLobbySuccess;
-
-          const otherClientsJoinLobby = otherClients.map((otherClient) =>
-            waitForMessage(otherClient.client, ServerWsMethod.JoinLobbySuccess)
-          );
-          const otherClientsLobbyClosed = otherClients.map((otherClient) =>
-            waitForMessage(otherClient.client, ServerWsMethod.JoinLobbySuccess)
-          );
-
-          otherClients.forEach((otherClient, i) => {
-            otherClient.client.send(
-              encodeWsMessage(ClientWsMethod.JoinLobby, {
-                token: otherClient.token,
-                lobbyId,
-                peerName: `peer${i}`,
-              })
-            );
-          });
-
-          await Promise.all(otherClientsJoinLobby);
+          assert(joinResponses.every((res) => res.status === 200));
 
           // Closing the connection should trigger a cleanup on the server side.
-          client.close();
+          host.close();
 
           await Promise.all(otherClientsLobbyClosed);
 
           otherClients.forEach((otherClient) => otherClient.client.close());
+          cleanupResponses(hostResponse, ...joinResponses);
         });
         test('all members of the lobby receive a message that a peer disconnected when a non-host member disconnects', async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-          const hostPeerDisconnected = waitForMessage(client, ServerWsMethod.PeerDisconnected);
+          const { client: host, token: hostToken } = await createClient();
 
-          const otherClients = await Promise.all(new Array(5).fill(0).map(() => createClient(WS_CONNECTION_URL)));
+          const hostPeerDisconnected = waitForMessage(host, ServerWsMethod.PeerDisconnected);
 
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
+          const otherClients = await Promise.all(new Array(5).fill(0).map(() => createClient()));
+
+          const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
+              token: hostToken,
               lobbyName: 'My lobby',
               hostName: 'jt',
               isPublic: true,
               maxMembers: 10,
-            })
-          );
-
-          const [, { lobbyId }] = await createLobbySuccess;
-
-          const otherClientsJoinLobby = otherClients.map((otherClient) =>
-            waitForMessage(otherClient.client, ServerWsMethod.JoinLobbySuccess)
-          );
-
-          otherClients.forEach((otherClient, i) => {
-            otherClient.client.send(
-              encodeWsMessage(ClientWsMethod.JoinLobby, {
-                token: otherClient.token,
-                lobbyId,
-                peerName: `peer${i}`,
-              })
-            );
+            }),
           });
 
-          await Promise.all(otherClientsJoinLobby);
+          assertEquals(hostResponse.status, 201);
+
+          const hostPayload = await hostResponse.json();
+
+          const joinResponses = await Promise.all(
+            otherClients.map((otherClient, i) => {
+              return fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(hostPayload.lobbyId)}`, {
+                method: HttpMethod.Post,
+                body: JSON.stringify({
+                  token: otherClient.token,
+                  peerName: `peer homie ${i}`,
+                }),
+              });
+            })
+          );
 
           // Closing the connection should trigger a cleanup on the server side.
           const [disconnectedClient] = otherClients.splice(0, 1);
@@ -226,746 +1028,57 @@ describe('LobbyServer', () => {
           await Promise.all(otherClientsPeerDisconnected);
 
           otherClients.forEach((otherClient) => otherClient.client.close());
+          host.close();
+          cleanupResponses(hostResponse, ...joinResponses);
         });
       });
     });
 
-    describe(`${ClientWsMethod.CreateLobby}`, () => {
-      describe('success when...', () => {
-        test('the payload is good and the client is available to host', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'My lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [method, payload] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.CreateLobbySuccess);
-
-          assertEquals(payload.lobbyName, 'My lobby');
-          assert('lobbyId' in payload);
-        });
-      });
-      describe('failure when...', () => {
-        test('the payload has no token', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(
-              ClientWsMethod.CreateLobby,
-              // @ts-ignore
-              {
-                lobbyName: 'My lobby',
-                hostName: 'jt',
-                isPublic: false,
-                maxMembers: 3,
-              }
-            )
-          );
-
-          const [method] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.WsMessageError);
-        });
-        test('the payload has no lobby', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(
-              ClientWsMethod.CreateLobby,
-              // @ts-ignore
-              {
-                token,
-                hostName: 'jt',
-                isPublic: false,
-                maxMembers: 3,
-              }
-            )
-          );
-
-          const [method] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.WsMessageError);
-        });
-        test('the payload has no host name', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(
-              ClientWsMethod.CreateLobby,
-              // @ts-ignore
-              {
-                token,
-                lobbyName: 'test',
-                isPublic: false,
-                maxMembers: 3,
-              }
-            )
-          );
-
-          const [method] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.WsMessageError);
-        });
-        test('the payload has no public indicator', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(
-              ClientWsMethod.CreateLobby,
-              // @ts-ignore
-              {
-                token,
-                lobbyName: 'test',
-                hostName: 'jt',
-                maxMembers: 3,
-              }
-            )
-          );
-
-          const [method] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.WsMessageError);
-        });
-        test('the payload does not specify max members', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(
-              ClientWsMethod.CreateLobby,
-              // @ts-ignore
-              {
-                token,
-                lobbyName: 'test',
-                hostName: 'jt',
-                isPublic: true,
-              }
-            )
-          );
-
-          const [method] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.WsMessageError);
-        });
-        test('the client is already the host of another lobby', async () => {
-          const lobbyFailureWaiter = waitForMessage(client, ServerWsMethod.CreateLobbyFailure);
-          const lobbySuccessWaiter = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'test lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          await lobbySuccessWaiter;
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'brand new test lobby',
-              hostName: 'different name',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [method, payload] = await lobbyFailureWaiter;
-
-          assertEquals(method, ServerWsMethod.CreateLobbyFailure);
-          assert(payload.errors.some((error: string) => error.includes('cannot be the host of a new lobby')));
-        });
-        test('the client is already in another lobby', async () => {
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-
-          const hostCreateLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-          const peerCreateLobbyFailure = waitForMessage(peerClient, ServerWsMethod.CreateLobbyFailure);
-          const peerJoinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'test lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 5,
-            })
-          );
-
-          const [, { lobbyId }] = await hostCreateLobbySuccess;
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'Peer JT',
-            })
-          );
-
-          await peerJoinLobbySuccess;
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token: peerClientToken,
-              hostName: 'Naughty Peer Host',
-              isPublic: false,
-              lobbyName: 'Impossible Lobby',
-              maxMembers: 3,
-            })
-          );
-
-          const [, { errors }] = await peerCreateLobbyFailure;
-
-          assert(errors.some((error: string) => error.includes('already in a lobby')));
-
-          peerClient.close();
-        });
-      });
-      describe('validation', () => {
-        test(`the lobby name cannot exceed 50 characters`, async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: '123456789012345678901234567890123456789012345678901234567890',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.CreateLobby);
-        });
-        test('the host name cannot exceed 50 characters', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'my lobby',
-              hostName: '123456789012345678901234567890123456789012345678901234567890',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.CreateLobby);
-        });
-        test('the lobby name cannot be only spaces', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: '  ',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.CreateLobby);
-        });
-        test('the host name cannot be only spaces', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'lobby',
-              hostName: ' ',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.CreateLobby);
-        });
-        test('the max members cannot be 0', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'lobby',
-              hostName: ' ',
-              isPublic: true,
-              maxMembers: 0,
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.CreateLobby);
-        });
-        test('the max members cannot be negative', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'lobby',
-              hostName: ' ',
-              isPublic: true,
-              maxMembers: -2,
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.CreateLobby);
-        });
-        test('the max members cannot be more than 64', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'lobby',
-              hostName: ' ',
-              isPublic: true,
-              maxMembers: 65,
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.CreateLobby);
-        });
-      });
-    });
-
-    describe(`${ClientWsMethod.JoinLobby}`, () => {
-      test('members of the lobby are notified of a peer connecting', async () => {
-        const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-        const hostPeerConnected = waitForMessage(client, ServerWsMethod.PeerConnected);
-
-        client.send(
-          encodeWsMessage(ClientWsMethod.CreateLobby, {
-            token,
-            lobbyName: 'My lobby',
-            hostName: 'jt',
-            isPublic: true,
-            maxMembers: 3,
-          })
-        );
-
-        const [, { lobbyId }] = await createLobbySuccess;
-
-        const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-        const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-
-        peerClient.send(
-          encodeWsMessage(ClientWsMethod.JoinLobby, {
-            token: peerClientToken,
-            lobbyId,
-            peerName: 'Peer JT',
-          })
-        );
-
-        await joinLobbySuccess;
-        await hostPeerConnected;
-
-        const peerPeerConnected = waitForMessage(peerClient, ServerWsMethod.PeerConnected);
-        const secondHostPeerConnected = waitForMessage(client, ServerWsMethod.PeerConnected);
-        const { client: otherPeerClient, token: otherPeerClientToken } = await createClient(WS_CONNECTION_URL);
-
-        otherPeerClient.send(
-          encodeWsMessage(ClientWsMethod.JoinLobby, {
-            token: otherPeerClientToken,
-            lobbyId,
-            peerName: 'Peer JT 2',
-          })
-        );
-
-        await peerPeerConnected;
-        await secondHostPeerConnected;
-
-        peerClient.close();
-        otherPeerClient.close();
-      });
-      describe('success when...', () => {
-        test('the payload is good and the client can join the lobby', async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'My lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, { lobbyId }] = await createLobbySuccess;
-
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'Peer JT',
-            })
-          );
-
-          const [, payload] = await joinLobbySuccess;
-
-          assertEquals(payload.lobbyName, 'My lobby');
-          assertEquals(payload.lobbyId, lobbyId);
-
-          peerClient.close();
-        });
-      });
-      describe('failure when...', () => {
-        test('the payload has no token', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(
-              ClientWsMethod.JoinLobby,
-              // @ts-ignore
-              {
-                lobbyId: '123',
-                peerName: 'name',
-              }
-            )
-          );
-
-          const [method] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.WsMessageError);
-        });
-        test('the payload has no lobbyId', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(
-              ClientWsMethod.JoinLobby,
-              // @ts-ignore
-              {
-                token,
-                peerName: 'name',
-              }
-            )
-          );
-
-          const [method] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.WsMessageError);
-        });
-        test('the payload has no peerName', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(
-              ClientWsMethod.JoinLobby,
-              // @ts-ignore
-              {
-                token,
-                lobbyId: '123',
-              }
-            )
-          );
-
-          const [method] = await messageWaiter;
-
-          assertEquals(method, ServerWsMethod.WsMessageError);
-        });
-        test('the client is already the host of another lobby', async () => {
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-
-          const peerClientHostSuccess = waitForMessage(peerClient, ServerWsMethod.CreateLobbySuccess);
-          const lobbySuccessWaiter = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-          const joinLobbyFailure = waitForMessage(client, ServerWsMethod.JoinLobbyFailure);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'test lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token: peerClientToken,
-              lobbyName: 'test lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          await lobbySuccessWaiter;
-          const [, { lobbyId: otherLobbyId }] = await peerClientHostSuccess;
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token,
-              lobbyId: otherLobbyId,
-              peerName: 'peer',
-            })
-          );
-
-          const [, payload] = await joinLobbyFailure;
-
-          assert(payload.errors.some((error: string) => error.includes('already in a lobby')));
-
-          peerClient.close();
-        });
-        test('the client is already in another lobby', async () => {
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-          const { client: otherPeerClient, token: otherPeerClientToken } = await createClient(WS_CONNECTION_URL);
-
-          const hostCreateLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-          const otherPeerCreateLobbySuccess = waitForMessage(otherPeerClient, ServerWsMethod.CreateLobbySuccess);
-          const peerJoinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-          const peerJoinLobbyFailure = waitForMessage(peerClient, ServerWsMethod.JoinLobbyFailure);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'test lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 5,
-            })
-          );
-          otherPeerClient.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token: otherPeerClientToken,
-              lobbyName: 'test lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 5,
-            })
-          );
-
-          const [, { lobbyId }] = await hostCreateLobbySuccess;
-          const [, { lobbyId: otherLobbyId }] = await otherPeerCreateLobbySuccess;
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'Peer JT',
-            })
-          );
-
-          await peerJoinLobbySuccess;
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId: otherLobbyId,
-              peerName: 'Peer JT',
-            })
-          );
-
-          const [, { errors }] = await peerJoinLobbyFailure;
-
-          assert(errors.some((error: string) => error.includes('already in a lobby')));
-
-          peerClient.close();
-          otherPeerClient.close();
-        });
-        test('the lobby is full', async () => {
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-
-          const lobbySuccessWaiter = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-          const joinLobbyFailure = waitForMessage(peerClient, ServerWsMethod.JoinLobbyFailure);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'test lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 1,
-            })
-          );
-
-          const [, { lobbyId }] = await lobbySuccessWaiter;
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'peer',
-            })
-          );
-
-          const [, { errors }] = await joinLobbyFailure;
-
-          assert(errors.some((error: string) => error.includes('lobby is full')));
-
-          peerClient.close();
-        });
-        test('someone with the requested name is already in the lobby', async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'My lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, { lobbyId }] = await createLobbySuccess;
-
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-          const joinLobbyFailure = waitForMessage(peerClient, ServerWsMethod.JoinLobbyFailure);
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'jt',
-            })
-          );
-
-          const [, { errors }] = await joinLobbyFailure;
-
-          assert(errors.some((error: string) => error.includes('name is taken')));
-
-          peerClient.close();
-        });
-      });
-      describe('validation', () => {
-        test('peerName cannot be more than 50 characters', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token,
-              lobbyId: '123',
-              peerName: '123456789012345678901234567890123456789012345678901234567890',
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.JoinLobby);
-        });
-        test('peerName cannot be only spaces', async () => {
-          const messageWaiter = waitForMessage(client, ServerWsMethod.WsMessageError);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token,
-              lobbyId: '123',
-              peerName: '  ',
-            })
-          );
-
-          const [, payload] = await messageWaiter;
-
-          assertEquals(payload.method, ClientWsMethod.JoinLobby);
-        });
-      });
-    });
-
-    describe(`${ClientWsMethod.Message}`, () => {
+    describe('lobby messaging', () => {
       test(`all members are informed when one member sends a message`, async () => {
-        const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+        const { cleanupLobby, host, peers, lobbyId } = await createLobby(3);
 
-        client.send(
-          encodeWsMessage(ClientWsMethod.CreateLobby, {
-            token,
-            lobbyName: 'My lobby',
-            hostName: 'jt',
-            isPublic: true,
-            maxMembers: 3,
-          })
+        const peerClients = peers.map((p) => p.client);
+
+        const messageReceiveds = [...peerClients, host.client].map((c) =>
+          waitForMessage(c, ServerWsMethod.MessageReceived)
         );
 
-        const [, { lobbyId }] = await createLobbySuccess;
-
-        const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-        const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-
-        peerClient.send(
-          encodeWsMessage(ClientWsMethod.JoinLobby, {
-            token: peerClientToken,
-            lobbyId,
-            peerName: 'Peer JT',
-          })
-        );
-
-        await joinLobbySuccess;
-
-        const messageReceiveds = [client, peerClient].map((c) => waitForMessage(c, ServerWsMethod.MessageReceived));
-
-        peerClient.send(
+        peerClients[0].send(
           encodeWsMessage(ClientWsMethod.Message, {
             lobbyId,
             message: 'Hello, fellow gamers!',
-            token: peerClientToken,
+            token: peers[0].token,
           })
         );
 
-        const [[, payload]] = await Promise.all(messageReceiveds);
+        const receivedMessageResults = await Promise.all(messageReceiveds);
 
-        assertEquals(payload.message.message, 'Hello, fellow gamers!');
-        assertEquals(payload.message.senderName, 'Peer JT');
-        assert('timestamp' in payload.message);
+        receivedMessageResults.forEach(([, payload]) => {
+          assertEquals(payload.message.message, 'Hello, fellow gamers!');
+          assertEquals(payload.message.senderName, 'peer 0');
+          assert('timestamp' in payload.message);
+        });
 
-        peerClient.close();
+        cleanupLobby();
       });
-      test(`no members are informed when the sender isn't in the lobby`, async () => {
-        // TODO: Kinda hard to test a negative... Don't love how I'm doing this, but I want
-        // it covered somehow.
-        const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
+      test(`no message notification is present when a client outside the lobby tries to send a message to it`, async () => {
+        const {
+          host: { client: hostClient, token: hostToken },
+          lobbyId,
+          cleanupLobby,
+        } = await createLobby();
 
-        client.send(
-          encodeWsMessage(ClientWsMethod.CreateLobby, {
-            token,
-            lobbyName: 'My lobby',
-            hostName: 'jt',
-            isPublic: true,
-            maxMembers: 3,
-          })
-        );
-
-        const [, { lobbyId }] = await createLobbySuccess;
-
-        const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
+        const { client, token } = await createClient();
 
         let messageWasReceived = false;
-        waitForMessage(client, ServerWsMethod.MessageReceived).then(() => (messageWasReceived = true));
+        waitForMessage(hostClient, ServerWsMethod.MessageReceived).then(() => (messageWasReceived = true));
 
-        peerClient.send(
+        client.send(
           encodeWsMessage(ClientWsMethod.Message, {
             lobbyId,
             message: 'Hello, fellow gamers!',
-            token: peerClientToken,
+            token: token,
           })
         );
 
@@ -981,315 +1094,16 @@ describe('LobbyServer', () => {
           false
         );
 
-        peerClient.close();
-      });
-      describe(`ws message error when...`, () => {
-        test(`there's no lobbyId`, async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'My lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, { lobbyId }] = await createLobbySuccess;
-
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'Peer JT',
-            })
-          );
-
-          await joinLobbySuccess;
-
-          const messageError = waitForMessage(peerClient, ServerWsMethod.WsMessageError);
-
-          peerClient.send(
-            encodeWsMessage(
-              ClientWsMethod.Message,
-              // @ts-ignore
-              {
-                message: 'Hello, fellow gamers!',
-                token: peerClientToken,
-              }
-            )
-          );
-
-          await messageError;
-
-          peerClient.close();
-        });
-        test(`there's no message`, async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'My lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, { lobbyId }] = await createLobbySuccess;
-
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'Peer JT',
-            })
-          );
-
-          await joinLobbySuccess;
-
-          const messageError = waitForMessage(peerClient, ServerWsMethod.WsMessageError);
-
-          peerClient.send(
-            encodeWsMessage(
-              ClientWsMethod.Message,
-              // @ts-ignore
-              {
-                lobbyId,
-                token: peerClientToken,
-              }
-            )
-          );
-
-          await messageError;
-
-          peerClient.close();
-        });
-        test(`the message is empty`, async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'My lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, { lobbyId }] = await createLobbySuccess;
-
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'Peer JT',
-            })
-          );
-
-          await joinLobbySuccess;
-
-          const messageError = waitForMessage(peerClient, ServerWsMethod.WsMessageError);
-
-          peerClient.send(
-            encodeWsMessage(
-              ClientWsMethod.Message,
-              // @ts-ignore
-              {
-                lobbyId,
-                message: '',
-                token: peerClientToken,
-              }
-            )
-          );
-
-          await messageError;
-
-          peerClient.close();
-        });
-        test(`the message is greater than 250 characters`, async () => {
-          const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-          client.send(
-            encodeWsMessage(ClientWsMethod.CreateLobby, {
-              token,
-              lobbyName: 'My lobby',
-              hostName: 'jt',
-              isPublic: true,
-              maxMembers: 3,
-            })
-          );
-
-          const [, { lobbyId }] = await createLobbySuccess;
-
-          const { client: peerClient, token: peerClientToken } = await createClient(WS_CONNECTION_URL);
-          const joinLobbySuccess = waitForMessage(peerClient, ServerWsMethod.JoinLobbySuccess);
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.JoinLobby, {
-              token: peerClientToken,
-              lobbyId,
-              peerName: 'Peer JT',
-            })
-          );
-
-          await joinLobbySuccess;
-
-          const messageError = waitForMessage(peerClient, ServerWsMethod.WsMessageError);
-
-          peerClient.send(
-            encodeWsMessage(ClientWsMethod.Message, {
-              lobbyId,
-              message: new Array(251)
-                .fill(0)
-                .map(() => 'a')
-                .join(''),
-              token: peerClientToken,
-            })
-          );
-
-          await messageError;
-
-          peerClient.close();
-        });
-      });
-    });
-  });
-
-  describe('http', () => {
-    describe('/lobbies', () => {
-      test('has no lobbies when there are no lobbies', async () => {
-        const response = await (await fetch(`${API_CONNECTION_URL}/lobbies`)).json();
-
-        assertEquals(response.lobbies.length, 0);
-      });
-      test('returns all public lobbies', async () => {
-        const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-        client.send(
-          encodeWsMessage(ClientWsMethod.CreateLobby, {
-            token,
-            lobbyName: 'My lobby',
-            hostName: 'jt',
-            isPublic: true,
-            maxMembers: 3,
-          })
-        );
-
-        await createLobbySuccess;
-
-        const response = await (await fetch(`${API_CONNECTION_URL}/lobbies`)).json();
-        const lobby = response.lobbies[0];
-
-        assertEquals(lobby.name, 'My lobby');
-        assertExists(lobby.id, 'My lobby');
-        assertEquals(lobby.currentMembers, 1);
-        assertEquals(lobby.maxMembers, 3);
-      });
-      test('omits private lobbies', async () => {
-        const { client: otherClient, token: otherClientToken } = await createClient(WS_CONNECTION_URL);
-
-        await waitFor(() => !!otherClientToken);
-
-        const createLobbySuccesses = [client, otherClient].map((c) =>
-          waitForMessage(c, ServerWsMethod.CreateLobbySuccess)
-        );
-
-        client.send(
-          encodeWsMessage(ClientWsMethod.CreateLobby, {
-            token,
-            lobbyName: 'My lobby',
-            hostName: 'jt',
-            isPublic: true,
-            maxMembers: 3,
-          })
-        );
-        otherClient.send(
-          encodeWsMessage(ClientWsMethod.CreateLobby, {
-            token: otherClientToken!,
-            lobbyName: 'Other Lobby',
-            hostName: 'Other JT',
-            isPublic: false,
-            maxMembers: 5,
-          })
-        );
-
-        await Promise.all(createLobbySuccesses);
-
-        const response = await (await fetch(`${API_CONNECTION_URL}/lobbies`)).json();
-        const lobby = response.lobbies[0];
-
-        assertEquals(response.lobbies.length, 1);
-        assertEquals(lobby.name, 'My lobby');
-        assertExists(lobby.id, 'My lobby');
-        assertEquals(lobby.currentMembers, 1);
-        assertEquals(lobby.maxMembers, 3);
-
-        otherClient.close();
-      });
-      test('lobbies are no longer visible after being closed', async () => {
-        const createLobbySuccess = waitForMessage(client, ServerWsMethod.CreateLobbySuccess);
-
-        client.send(
-          encodeWsMessage(ClientWsMethod.CreateLobby, {
-            token,
-            lobbyName: 'My lobby',
-            hostName: 'jt',
-            isPublic: true,
-            maxMembers: 3,
-          })
-        );
-
-        const [, { lobbyId }] = await createLobbySuccess;
-
-        const { client: otherClient, token: otherClientToken } = await createClient(WS_CONNECTION_URL);
-        const otherClientLobbyClosed = waitForMessage(otherClient, ServerWsMethod.LobbyClosed);
-        const otherClientJoinLobby = waitForMessage(otherClient, ServerWsMethod.JoinLobbySuccess);
-
-        otherClient.send(
-          encodeWsMessage(ClientWsMethod.JoinLobby, {
-            token: otherClientToken,
-            lobbyId,
-            peerName: 'peer',
-          })
-        );
-
-        await otherClientJoinLobby;
-
-        const response = await (await fetch(`${API_CONNECTION_URL}/lobbies`)).json();
-
-        assertEquals(response.lobbies.length, 1);
-
-        // Closing the connection should trigger a cleanup on the server side.
         client.close();
 
-        await otherClientLobbyClosed;
-
-        const newResponse = await (await fetch(`${API_CONNECTION_URL}/lobbies`)).json();
-
-        assertEquals(newResponse.lobbies.length, 0);
-
-        otherClient.close();
+        cleanupLobby();
       });
     });
   });
 });
 
 async function createClient(
-  url: string,
+  url = getWsConnectionUrl(),
   subs?: Partial<Record<WsMethod, <T extends WsMethod>(method: T, payload: WsMessagePayloadMap[T]) => void>>
 ): Promise<{ client: WebSocket; token: IdToken }> {
   const newClient = new WebSocket(url);
@@ -1300,7 +1114,7 @@ async function createClient(
 
       const action = subs[receivedMethod as keyof WsMessagePayloadMap];
 
-      action?.(receivedMethod as WsMethod, payload);
+      action?.(receivedMethod as WsMethod, payload as ValueOf<WsMessagePayloadMap>);
     });
   }
 
@@ -1332,4 +1146,94 @@ function waitForMessage(socket: WebSocket, method: ClientWsMethod | ServerWsMeth
       }
     });
   });
+}
+
+function getHttpConnectionUrl(): string {
+  return `http://localhost:${HTTP_PORT + portCounter}`;
+}
+
+function getWsConnectionUrl(): string {
+  return `ws://localhost:${HTTP_PORT + portCounter}`;
+}
+
+/**
+ * Utility function that creates a lobby, optionally with joined peers.
+ *
+ * @param lobbyOptions - Options for creating the lobby
+ * @param numPeers - (Optional, defaults to 0) The number of peers to create
+ * and have join the lobby.
+ *
+ * @returns An object with details about the created of the lobby.
+ */
+async function createLobby(
+  numPeers = 0,
+  lobbyOptions?: Omit<JoinLobbyPayload, 'token'>
+): Promise<{
+  host: { client: WebSocket; token: string };
+  /**
+   * An array of the peers that were added and joined to the lobby.
+   * The names of the peers in the joined lobby will be `peer-{index}`.
+   * The length of this array is equal to `numPeers`.
+   */
+  peers: { client: WebSocket; token: string }[];
+  lobbyId: string;
+  /**
+   * Call to cleanup any open connections associated with the lobby.
+   */
+  cleanupLobby: () => void;
+}> {
+  const { client: hostClient, token: hostToken } = await createClient();
+
+  const hostResponse = await fetch(`${getHttpConnectionUrl()}${CREATE_LOBBY_PATH}`, {
+    method: HttpMethod.Post,
+    body: JSON.stringify({
+      lobbyName: 'My lobby',
+      hostName: 'jt',
+      isPublic: true,
+      maxMembers: numPeers + 1,
+      ...lobbyOptions,
+      token: hostToken,
+    }),
+  });
+
+  const { lobbyId } = await hostResponse.json();
+
+  const peerCreationResults = await Promise.all(new Array(numPeers).fill(0).map(() => createClient()));
+
+  const peerJoinResponses = await Promise.all(
+    peerCreationResults.map(({ token }, index) => {
+      return fetch(`${getHttpConnectionUrl()}${getJoinLobbyPath(lobbyId)}`, {
+        method: HttpMethod.Post,
+        body: JSON.stringify({
+          token: token,
+          peerName: `peer ${index}`,
+        }),
+      });
+    })
+  );
+
+  return {
+    host: {
+      client: hostClient,
+      token: hostToken,
+    },
+    peers: peerCreationResults,
+    lobbyId,
+    cleanupLobby: () => {
+      hostClient.close();
+      peerCreationResults.forEach(({ client }) => {
+        client.close();
+      });
+
+      cleanupResponses(...peerJoinResponses, hostResponse);
+    },
+  };
+}
+
+async function cleanupResponses(...responses: Response[]) {
+  for (const res of responses) {
+    if (!res.bodyUsed) {
+      await res.body?.cancel();
+    }
+  }
 }

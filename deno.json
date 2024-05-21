@@ -5,7 +5,8 @@
     "assert": "https://deno.land/std@0.224.0/assert/mod.ts",
     "mock": "https://deno.land/std@0.224.0/testing/mock.ts",
     "base64": "https://deno.land/std@0.224.0/encoding/base64.ts",
-    "zod": "npm:zod"
+    "zod": "https://deno.land/x/zod@v3.23.8/mod.ts",
+    "potami": "https://deno.land/x/potami/mod.ts"
   },
   "tasks": {
     "start": "deno run --allow-net --unstable-net --allow-read main.ts",

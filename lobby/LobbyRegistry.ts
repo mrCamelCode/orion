@@ -2,6 +2,7 @@ import { logger } from '../logging/Logger.ts';
 import { NetworkClient } from '../network/NetworkClient.ts';
 import { ServerWsMethod } from '../network/network.model.ts';
 import { encodeWsMessage, sendToSockets } from '../network/network.util.ts';
+import { PtpMediator } from '../ptp-mediation/PtpMediator.ts';
 import { ItemRegisteredHandler, ItemRemovedHandler, Registry } from '../shared/Registry.abstract.ts';
 import { IdToken } from '../shared/model.ts';
 import { generateBase36Id } from '../util/util.ts';
@@ -13,6 +14,7 @@ export class LobbyRegistry extends Registry<Lobby> {
    * Maps network client tokens to the ID of the lobby that client's in.
    */
   #networkClientToLobbyMapping: Record<IdToken, string> = {};
+  #lobbyIdToPtpMediator: Record<string, PtpMediator> = {};
 
   constructor() {
     super();
@@ -139,6 +141,19 @@ export class LobbyRegistry extends Registry<Lobby> {
     return undefined;
   }
 
+  startPtpMediatorForLobby(lobbyId: string) {
+    if (lobbyId && this.has(lobbyId)) {
+      const { item: lobby } = this.getById(lobbyId)!;
+
+      const mediator = new PtpMediator();
+
+      this.#lobbyIdToPtpMediator[lobbyId] = mediator;
+
+      lobby.lock();
+      mediator.start();
+    }
+  }
+
   protected override getNextId(): string {
     return generateBase36Id(5);
   }
@@ -155,6 +170,13 @@ export class LobbyRegistry extends Registry<Lobby> {
     this.#networkClientToLobbyMapping = Object.fromEntries(
       Object.entries(this.#networkClientToLobbyMapping).filter(([, lobbyId]) => lobbyId !== removedLobbyId)
     );
+
+    const ptpMediator = this.#lobbyIdToPtpMediator[removedLobbyId];
+    if (ptpMediator) {
+      ptpMediator.cleanup();
+
+      delete this.#lobbyIdToPtpMediator[removedLobbyId];
+    }
 
     const members = removedLobby.members;
 

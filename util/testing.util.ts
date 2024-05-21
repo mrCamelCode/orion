@@ -5,4 +5,5 @@ export function stubLogger() {
   stub(logger, 'info', () => {});
   stub(logger, 'warn', () => {});
   stub(logger, 'error', () => {});
+  stub(console, 'log', () => {});
 }

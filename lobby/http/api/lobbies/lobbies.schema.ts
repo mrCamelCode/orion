@@ -6,6 +6,7 @@ export enum LobbiesFunction {
   GetPublicLobbies = 'getPublicLobbies',
   CreateLobby = 'createLobby',
   JoinLobby = 'joinLobby',
+  StartPtpMediation = 'startPtpMediation',
 }
 
 export const lobbiesSchemata = {
@@ -26,9 +27,13 @@ export const lobbiesSchemata = {
       })
     ),
   },
+  [LobbiesFunction.StartPtpMediation]: {
+    body: registeredClientPayloadSchema,
+  },
 };
 
 type LobbiesSchemata = typeof lobbiesSchemata;
 
 export type CreateLobbyPayload = z.infer<LobbiesSchemata[LobbiesFunction.CreateLobby]['body']>;
 export type JoinLobbyPayload = z.infer<LobbiesSchemata[LobbiesFunction.JoinLobby]['body']>;
+export type StartPtpMediationPayload = z.infer<LobbiesSchemata[LobbiesFunction.StartPtpMediation]['body']>;

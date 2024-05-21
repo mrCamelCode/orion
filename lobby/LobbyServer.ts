@@ -11,6 +11,10 @@ export class LobbyServer {
   #httpServer: HttpServer | undefined;
 
   async start(port = LobbyServer.DEFAULT_PORT) {
+    if (this.#httpServer) {
+      await this.stop();
+    }
+
     this.#httpServer = new HttpServer();
     const networkClientRegistry = new NetworkClientRegistry();
     const lobbyRegistry = new LobbyRegistry();

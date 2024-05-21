@@ -11,7 +11,7 @@ export enum ServerWsMethod {
    * This occurs when the error is in the message itself and is akin to a bad
    * request. If you receive this message, your message failed basic validation
    * of the expected shape and/or constraints of the contents of the message.
-   * 
+   *
    * Not all bad messages result in this message being sent out. In those cases,
    * the server simply ignores the message. See the API documentation for the
    * expected values for messages your client will send.
@@ -49,6 +49,29 @@ export enum ServerWsMethod {
    * including the sender.
    */
   MessageReceived = 'lobby_messaging_received',
+
+  /**
+   * Emitted by the server when it would like the client to send a
+   * packet over UDP so the server can capture the client's connection
+   * details to help mediate the Peer-to-Peer connection.
+   *
+   * The contents of the packet must be binary of a base-64 encoded JSON
+   * object with the format:
+   *
+   * ```ts
+   * {
+   *   method: 'ptpMediation_connect';
+   *   // The client's unique token that was provided when they originally
+   *   // connected their WS.
+   *   token: string;
+   * }
+   * ```
+   *
+   * The server may send this message to the client multiple times
+   * during the mediation process. The client's expected to send a
+   * packet whenever it receives this message.
+   */
+  SendPtpPacket = 'ptpMediation_send',
 }
 
 /**
@@ -62,14 +85,6 @@ export enum ClientWsMethod {
    * members of the relevant lobby.
    */
   Message = 'lobby_messaging_send',
-
-  /**
-   * Emitted by the host of the relevant lobby when they'd like to start
-   * the peer-to-peer mediation phase. During this phase, the server
-   * attempts to facilitate keeping all clients on the same page as
-   * they try to connect directly to one another.
-   */
-  StartPtpMediation = 'ptpMediation_start',
 }
 
 const registeredClientMessagePayloadSchema = z.object({
@@ -123,11 +138,6 @@ export const wsMessagePayloadSchemaMap = {
     z.object({
       lobbyId: z.string(),
       message: z.string().min(1).max(250),
-    })
-  ),
-  [ClientWsMethod.StartPtpMediation]: registeredClientMessagePayloadSchema.merge(
-    z.object({
-      lobbyId: z.string(),
     })
   ),
 };

@@ -2,9 +2,20 @@ import { LobbyClient } from './LobbyClient.ts';
 
 export class Lobby {
   #members: LobbyClient[] = [];
+  #isLocked = false;
 
   get members(): LobbyClient[] {
     return [...this.#members];
+  }
+
+  get isLocked(): boolean {
+    return this.#isLocked;
+  }
+
+  get isUndergoingPtpMediation(): boolean {
+    // Maybe have a more specific flag if the lobby being
+    // locked starts meaning more than one thing.
+    return this.#isLocked;
   }
 
   get numMembers(): number {
@@ -66,6 +77,14 @@ export class Lobby {
 
   isMember(member: LobbyClient): boolean {
     return this.#members.some((existingMember) => this.#doLobbyClientsMatch(existingMember, member));
+  }
+
+  lock() {
+    this.#isLocked = true;
+  }
+
+  unlock() {
+    this.#isLocked = false;
   }
 
   #doLobbyClientsMatch(a: LobbyClient, b: LobbyClient): boolean {

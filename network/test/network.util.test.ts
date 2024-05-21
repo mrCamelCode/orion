@@ -18,14 +18,14 @@ describe('Network Util', () => {
 
   describe('decodeWsMessage', () => {
     test('the method is successfully parsed', () => {
-      const [method] = decodeWsMessage('pong:e30=');
+      const [method] = decodeWsMessage('client_registered:eyJ0b2tlbiI6IjEyMyJ9');
 
-      assertEquals(method, ServerWsMethod.Pong);
+      assertEquals(method, ServerWsMethod.ClientRegistered);
     });
     test('the payload is successfully parsed and decoded', () => {
-      const [, payload] = decodeWsMessage('pong:e30=');
+      const [, payload] = decodeWsMessage('client_registered:eyJ0b2tlbiI6IjEyMyJ9');
 
-      assertEquals(payload, {});
+      assertEquals(payload, { token: '123' });
     });
   });
 });

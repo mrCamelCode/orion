@@ -4,7 +4,13 @@ import { NetworkClientRegistry } from '../../../../network/NetworkClientRegistry
 import { LobbyRegistry } from '../../../LobbyRegistry.ts';
 import { ErrorResponse } from '../../responses/error.response.ts';
 import { validateAgainstSchema } from '../../validation/validate-schema.ts';
-import { CreateLobbyPayload, JoinLobbyPayload, LobbiesFunction, lobbiesSchemata } from './lobbies.schema.ts';
+import {
+  CreateLobbyPayload,
+  JoinLobbyPayload,
+  LobbiesFunction,
+  StartPtpMediationPayload,
+  lobbiesSchemata,
+} from './lobbies.schema.ts';
 import { LobbiesService } from './lobbies.service.ts';
 
 export class LobbiesController extends Controller {
@@ -75,14 +81,40 @@ export class LobbiesController extends Controller {
       try {
         const joinResult = this.#lobbiesService.joinLobby(networkClient, lobbyId, peerName);
 
-        logger.info(`Client ${networkClientId} successfully joined lobby ${lobbyId}`);
+        logger.info(`Client ${networkClientId} successfully joined lobby ${lobbyId}.`);
 
         return new JsonResponse(joinResult, { status: 200 });
       } catch (err) {
         return new ErrorResponse({ status: 409, errors: [`${err}`] });
       }
     } else {
-      logger.warn('Unregistered client attempted to join a lobby.');
+      logger.warn(`Unregistered client attempted to join lobby ${lobbyId}.`);
+
+      return new ErrorResponse({ errors: [`The client is unregistered. Try reconnecting.`] });
+    }
+  };
+
+  'POST /:lobbyId/startPtp': RequestHandler = async (req, { lobbyId }) => {
+    const json = await req.json();
+
+    validateAgainstSchema(req, json, lobbiesSchemata[LobbiesFunction.StartPtpMediation]);
+
+    const { token } = json as StartPtpMediationPayload;
+
+    const { item: networkClient, id: networkClientId } = this.#networkClientRegistry.getByToken(token) ?? {};
+
+    if (networkClient) {
+      try {
+        this.#lobbiesService.startPtpMediation(networkClient, lobbyId);
+
+        logger.info(`Client ${networkClientId} started PTP Mediation on lobby ${lobbyId}.`);
+
+        return new Response(undefined, { status: 200 });
+      } catch (err) {
+        return new ErrorResponse({ status: 409, errors: [`${err}`] });
+      }
+    } else {
+      logger.warn(`Unregistered client attempted to start PTP Mediation on lobby ${lobbyId}.`);
 
       return new ErrorResponse({ errors: [`The client is unregistered. Try reconnecting.`] });
     }

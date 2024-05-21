@@ -33,9 +33,6 @@ function registerWebSocketMessageHandlers(
 ): void {
   const handlerMapping: HandlerMap = {
     [ClientWsMethod.Message]: handleLobbyMessage(networkClientRegistry, lobbyRegistry),
-    [ClientWsMethod.StartPtpMediation]: () => {
-      throw new Error('Not implemented');
-    },
   };
 
   socket.addEventListener('open', () => {

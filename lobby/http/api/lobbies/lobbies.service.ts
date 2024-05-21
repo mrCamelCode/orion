@@ -63,7 +63,9 @@ export class LobbiesService {
       const { item: lobby } = this.#lobbyRegistry.getById(lobbyId) ?? {};
 
       if (lobby) {
-        if (lobby.isFull) {
+        if (lobby.isLocked) {
+          throw new Error(`The lobby is locked.`);
+        } else if (lobby.isFull) {
           throw new Error(`The lobby is full.`);
         } else if (lobby.members.some((member) => member.name === peerName)) {
           throw new Error(`The requested name is taken.`);
@@ -86,6 +88,28 @@ export class LobbiesService {
       } else {
         throw new Error(`Lobby ${lobbyId} doesn't exist.`);
       }
+    }
+  }
+
+  startPtpMediation(networkClient: NetworkClient, lobbyId: string) {
+    const { item: lobby } = this.#lobbyRegistry.getById(lobbyId) ?? {};
+
+    if (lobby) {
+      if (lobby.isLocked) {
+        throw new Error(`The lobby is locked.`);
+      } else if (lobby.numMembers < 2) {
+        throw new Error(`There must be at least 2 clients in the lobby to start PTP mediation.`);
+      } else {
+        const lobbyClient = this.#lobbyRegistry.getLobbyClientFromNetworkClient(networkClient);
+
+        if (lobbyClient && lobby.isHost(lobbyClient)) {
+          this.#lobbyRegistry.startPtpMediatorForLobby(lobbyId);
+        } else {
+          throw new Error(`Client is not the host of the lobby.`);
+        }
+      }
+    } else {
+      throw new Error(`Lobby ${lobbyId} doesn't exist.`);
     }
   }
 }

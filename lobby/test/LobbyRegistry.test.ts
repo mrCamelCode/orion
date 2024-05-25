@@ -9,7 +9,7 @@ import { LobbyRegistry } from '../LobbyRegistry.ts';
 describe('LobbyRegistry', () => {
   let registry: LobbyRegistry;
   beforeEach(() => {
-    registry = new LobbyRegistry();
+    registry = new LobbyRegistry(3000);
   });
 
   describe('getLobbyClientFromNetworkClient', () => {

@@ -9,7 +9,7 @@ import {
   WsMethod,
   wsMessagePayloadSchemaMap,
 } from '../../../network/network.model.ts';
-import { decodeWsMessage, encodeWsMessage, sendToSockets } from '../../../network/network.util.ts';
+import { decodePacket, encodePacket, sendToSockets } from '../../../network/network.util.ts';
 import { LobbyRegistry } from '../../LobbyRegistry.ts';
 
 type HandlerMap = Record<ClientWsMethod, OutboundMessage<any>>;
@@ -40,7 +40,7 @@ function registerWebSocketMessageHandlers(
 
     logger.info(`A client connected and was registered with the ID ${id}.`);
 
-    sendToSockets(encodeWsMessage(ServerWsMethod.ClientRegistered, { token: registeredClient.token }), socket);
+    sendToSockets(encodePacket(ServerWsMethod.ClientRegistered, { token: registeredClient.token }), socket);
   });
   socket.addEventListener('close', () => {
     const networkClient = networkClientRegistry.getBySocket(socket);
@@ -62,7 +62,7 @@ function registerWebSocketMessageHandlers(
 
     if (typeof data === 'string') {
       try {
-        const [method, payload] = decodeWsMessage(event.data);
+        const [method, payload] = decodePacket(event.data);
 
         const validationErrors = validateMessage(method, payload, handlerMapping, networkClientRegistry);
 
@@ -74,7 +74,7 @@ function registerWebSocketMessageHandlers(
           const { method: outgoingMethod, payload: outgoingPayload } = handler?.(payload) ?? {};
 
           if (outgoingMethod && outgoingPayload) {
-            sendToSockets(encodeWsMessage(outgoingMethod as WsMethod, outgoingPayload), socket);
+            sendToSockets(encodePacket(outgoingMethod as WsMethod, outgoingPayload), socket);
           }
         }
       } catch (error) {
@@ -128,7 +128,7 @@ const handleLobbyMessage =
         if (lobbyClient) {
           if (lobby.isMember(lobbyClient)) {
             sendToSockets(
-              encodeWsMessage(ServerWsMethod.MessageReceived, {
+              encodePacket(ServerWsMethod.MessageReceived, {
                 lobbyId,
                 message: {
                   timestamp: Date.now(),

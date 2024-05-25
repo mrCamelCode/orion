@@ -9,7 +9,7 @@ import { LobbiesService } from '../lobbies.service.ts';
 describe('LobbiesService', () => {
   describe('joinLobby', () => {
     test(`throws when the lobby is locked`, () => {
-      const lobbyRegistry = new LobbyRegistry();
+      const lobbyRegistry = new LobbyRegistry(3000);
 
       const service = new LobbiesService(lobbyRegistry);
 
@@ -31,7 +31,7 @@ describe('LobbiesService', () => {
 
   describe('startPtpMediation', () => {
     test(`throws when the lobby is locked`, () => {
-      const lobbyRegistry = new LobbyRegistry();
+      const lobbyRegistry = new LobbyRegistry(3000);
 
       const service = new LobbiesService(lobbyRegistry);
 

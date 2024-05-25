@@ -1,7 +1,7 @@
 import { logger } from '../logging/Logger.ts';
 import { NetworkClient } from '../network/NetworkClient.ts';
 import { ServerWsMethod } from '../network/network.model.ts';
-import { encodeWsMessage, sendToSockets } from '../network/network.util.ts';
+import { encodePacket, sendToSockets } from '../network/network.util.ts';
 import { PtpMediator } from '../ptp-mediation/PtpMediator.ts';
 import { ItemRegisteredHandler, ItemRemovedHandler, Registry } from '../shared/Registry.abstract.ts';
 import { IdToken } from '../shared/model.ts';
@@ -16,8 +16,15 @@ export class LobbyRegistry extends Registry<Lobby> {
   #networkClientToLobbyMapping: Record<IdToken, string> = {};
   #lobbyIdToPtpMediator: Record<string, PtpMediator> = {};
 
-  constructor() {
+  /**
+   * The port the server is using for UDP messages.
+   */
+  #udpPort: number;
+
+  constructor(udpPort: number) {
     super();
+
+    this.#udpPort = udpPort;
 
     this.onItemRegistered.subscribe(this.#handleItemRegistered);
     this.onItemRemoved.subscribe(this.#handleItemRemoved);
@@ -44,7 +51,7 @@ export class LobbyRegistry extends Registry<Lobby> {
         const membersToNotify = lobby.otherMembers(lobbyClient);
 
         sendToSockets(
-          encodeWsMessage(ServerWsMethod.PeerConnected, {
+          encodePacket(ServerWsMethod.PeerConnected, {
             peerName: lobbyClient.name,
             lobbyId,
           }),
@@ -87,7 +94,7 @@ export class LobbyRegistry extends Registry<Lobby> {
         const membersToNotify = lobby.otherMembers(lobbyClient);
 
         sendToSockets(
-          encodeWsMessage(ServerWsMethod.PeerDisconnected, {
+          encodePacket(ServerWsMethod.PeerDisconnected, {
             peerName: lobbyClient.name,
             lobbyId,
           }),
@@ -131,28 +138,58 @@ export class LobbyRegistry extends Registry<Lobby> {
   }
 
   getLobbyClientFromNetworkClient(networkClient: NetworkClient): LobbyClient | undefined {
-    const lobbyId = this.#networkClientToLobbyMapping[networkClient.token];
-    if (lobbyId) {
-      const { item: lobby } = this.getById(lobbyId) ?? {};
+    const lobby = this.getLobbyFromNetworkClient(networkClient);
 
-      return lobby?.members.find((member) => member.networkClient.token === networkClient.token);
-    }
-
-    return undefined;
+    return lobby?.members.find((member) => member.networkClient.token === networkClient.token);
   }
 
-  startPtpMediatorForLobby(lobbyId: string) {
-    if (lobbyId && this.has(lobbyId)) {
+  getLobbyFromNetworkClient(networkClient: NetworkClient): Lobby | undefined {
+    const lobbyId = this.#networkClientToLobbyMapping[networkClient.token];
+    if (lobbyId) {
+      return this.getById(lobbyId)?.item;
+    }
+  }
+
+  startPtpMediationForLobby(lobbyId: string) {
+    if (lobbyId && this.has(lobbyId) && !this.#lobbyIdToPtpMediator[lobbyId]) {
       const { item: lobby } = this.getById(lobbyId)!;
 
-      const mediator = new PtpMediator();
+      const mediator = new PtpMediator(lobby, this.#udpPort);
 
       this.#lobbyIdToPtpMediator[lobbyId] = mediator;
+      mediator.onCleanup.subscribe(() => {
+        delete this.#lobbyIdToPtpMediator[lobbyId];
+        lobby.unlock();
+      });
+      mediator.onAbort.subscribe((reason) => {
+        sendToSockets(
+          encodePacket(ServerWsMethod.PtpMediationAborted, {
+            abortReason: reason,
+          }),
+          ...lobby.members.map((m) => m.networkClient.socket)
+        );
+      });
 
       lobby.lock();
       mediator.start();
     }
   }
+
+  handlePtpMediationConnect(address: Deno.NetAddr, networkClient: NetworkClient) {
+    const mediator = this.#getPtpMediatorFromNetworkClient(networkClient);
+
+    if (mediator) {
+      mediator.addDetailsForNetworkClient(networkClient, {
+        ip: address.hostname,
+        port: address.port,
+      });
+    }
+  }
+
+  isMediatingPtpForLobby(lobbyId: string): boolean {
+    return !!this.#lobbyIdToPtpMediator[lobbyId];
+  }
+
 
   protected override getNextId(): string {
     return generateBase36Id(5);
@@ -181,17 +218,21 @@ export class LobbyRegistry extends Registry<Lobby> {
     const members = removedLobby.members;
 
     sendToSockets(
-      encodeWsMessage(ServerWsMethod.LobbyClosed, {
+      encodePacket(ServerWsMethod.LobbyClosed, {
         lobbyName: removedLobby.name,
         lobbyId: removedLobbyId,
       }),
       ...getSocketsFromLobbyClients(members)
     );
   };
+
+  #getPtpMediatorFromNetworkClient(networkClient: NetworkClient): PtpMediator | undefined {
+    const lobbyId = this.#networkClientToLobbyMapping[networkClient.token];
+
+    return lobbyId && this.has(lobbyId) ? this.#lobbyIdToPtpMediator[lobbyId] : undefined;
+  }
 }
 
 function getSocketsFromLobbyClients(clients: LobbyClient[]) {
   return clients.map((client) => client.networkClient.socket);
 }
-
-export const lobbyRegistry = new LobbyRegistry();

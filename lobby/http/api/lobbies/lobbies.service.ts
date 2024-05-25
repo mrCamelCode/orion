@@ -99,11 +99,13 @@ export class LobbiesService {
         throw new Error(`The lobby is locked.`);
       } else if (lobby.numMembers < 2) {
         throw new Error(`There must be at least 2 clients in the lobby to start PTP mediation.`);
+      } else if (this.#lobbyRegistry.isMediatingPtpForLobby(lobbyId)) {
+        throw new Error(`PTP mediation is already underway for this lobby.`);
       } else {
         const lobbyClient = this.#lobbyRegistry.getLobbyClientFromNetworkClient(networkClient);
 
         if (lobbyClient && lobby.isHost(lobbyClient)) {
-          this.#lobbyRegistry.startPtpMediatorForLobby(lobbyId);
+          this.#lobbyRegistry.startPtpMediationForLobby(lobbyId);
         } else {
           throw new Error(`Client is not the host of the lobby.`);
         }

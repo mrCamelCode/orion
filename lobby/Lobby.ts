@@ -1,6 +1,10 @@
+import { Event } from '@jtjs/event';
 import { LobbyClient } from './LobbyClient.ts';
 
 export class Lobby {
+  onMemberAdded = new Event<(lobbyClient: LobbyClient) => void>();
+  onMemberRemoved = new Event<() => void>();
+
   #members: LobbyClient[] = [];
   #isLocked = false;
 
@@ -61,6 +65,8 @@ export class Lobby {
     if (!this.isMember(member) && !this.isFull) {
       this.#members.push(member);
 
+      this.onMemberAdded.trigger(member);
+
       return true;
     }
 
@@ -68,7 +74,12 @@ export class Lobby {
   }
 
   removeMember(member: LobbyClient) {
+    const startLength = this.#members.length;
     this.#members = this.#members.filter((existingMember) => !this.#doLobbyClientsMatch(existingMember, member));
+
+    if (this.#members.length !== startLength) {
+      this.onMemberRemoved.trigger();
+    }
   }
 
   isHost(member: LobbyClient): boolean {

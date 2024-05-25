@@ -3,10 +3,9 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, test } from 'bdd'
 import { restore } from 'mock';
 import { HttpMethod } from 'potami';
 import { ClientWsMethod, ServerWsMethod, WsMessagePayloadMap, WsMethod } from '../../network/network.model.ts';
-import { decodeWsMessage, encodeWsMessage } from '../../network/network.util.ts';
+import { decodePacket, encodePacket } from '../../network/network.util.ts';
 import { IdToken } from '../../shared/model.ts';
 import { ValueOf } from '../../types/types.ts';
-import { stubLogger } from '../../util/testing.util.ts';
 import { waitFor } from '../../util/util.ts';
 import { LobbyServer } from '../LobbyServer.ts';
 import { JoinLobbyPayload } from '../http/api/lobbies/lobbies.schema.ts';
@@ -29,18 +28,16 @@ let portCounter = 0;
 let server: LobbyServer;
 
 // Given that I actually start the server and create a client,
-// this is more like an integration test, which isn't ideal.
-// But I'd rather have the behaviour automatically tested than
-// leaving it untested just because I don't want to set up a full
-// and proper end-to-end testing environment.
+// these are more like integration tests. Great for peering into
+// how a client might communicate with the server.
 describe('LobbyServer', () => {
   beforeAll(() => {
-    stubLogger();
+    // stubLogger();
   });
   beforeEach(async () => {
     server = new LobbyServer();
 
-    await server.start(HTTP_PORT + portCounter);
+    await server.start(HTTP_PORT + portCounter, HTTP_PORT - (10 + portCounter));
   });
   afterEach(async () => {
     portCounter++;
@@ -1055,6 +1052,37 @@ describe('LobbyServer', () => {
         cleanupResponses(response);
       });
 
+      describe(`reminder ${ServerWsMethod.SendPtpPacket}`, () => {
+        // TODO: I can't seem to get FakeTime to actually work correctly.
+        // test(`peers receive reminder after a default of 10 seconds`, async () => {
+        //   const {
+        //     host,
+        //     peers,
+        //     lobbyId,
+        //     cleanupLobby,
+        //   } = await createLobby(1);
+        //   const messageWaiters = [host, ...peers]
+        //   .map((c) => c.client)
+        //   .map((client) => waitForMessage(client, ServerWsMethod.SendPtpPacket));
+        //   const response = await fetch(`${getHttpConnectionUrl()}${getStartPtpMediationPath(lobbyId)}`, {
+        //     method: HttpMethod.Post,
+        //     body: JSON.stringify({
+        //       token: host.token,
+        //     }),
+        //   });
+        //   assertEquals(response.status, 200);
+        //   await Promise.all(messageWaiters);
+        //   const reminderWaiters = [host, ...peers]
+        //   .map((c) => c.client)
+        //   .map((client) => waitForMessage(client, ServerWsMethod.SendPtpPacket));
+        //   using time = new FakeTime();
+        //   time.tick(11000);
+        //   await Promise.all(reminderWaiters);
+        //   cleanupLobby();
+        //   cleanupResponses(response);
+        // });
+      });
+
       describe('succeeds when...', () => {
         test(`the requesting client is the host and there's at least two members in the lobby`, async () => {
           const {
@@ -1182,7 +1210,64 @@ describe('LobbyServer', () => {
           cleanupLobby();
           cleanupResponses(response);
         });
+        test(`there's already a mediation being performed for the lobby`, async () => {
+          const {
+            host: { token },
+            lobbyId,
+            cleanupLobby,
+          } = await createLobby(1);
+
+          const response = await fetch(`${getHttpConnectionUrl()}${getStartPtpMediationPath(lobbyId)}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
+              token,
+            }),
+          });
+
+          assertEquals(response.status, 200);
+
+          const otherResponse = await fetch(`${getHttpConnectionUrl()}${getStartPtpMediationPath(lobbyId)}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
+              token,
+            }),
+          });
+
+          assertEquals(response.status, 409);
+
+          cleanupLobby();
+          cleanupResponses(response, otherResponse);
+        });
       });
+    });
+    describe('mediation aborting', () => {
+      test(`aborts when a client disconnects during the mediation`, async () => {
+        const { host, peers, lobbyId, cleanupLobby } = await createLobby(2);
+
+        const response = await fetch(`${getHttpConnectionUrl()}${getStartPtpMediationPath(lobbyId)}`, {
+          method: HttpMethod.Post,
+          body: JSON.stringify({
+            token: host.token,
+          }),
+        });
+
+        assertEquals(response.status, 200);
+
+        const [quittingPeer, ...otherPeers] = peers;
+
+        const messageWaiters = [host, ...otherPeers]
+          .map((c) => c.client)
+          .map((client) => waitForMessage(client, ServerWsMethod.PtpMediationAborted));
+
+        quittingPeer.client.close();
+
+        await Promise.all(messageWaiters);
+
+        cleanupLobby();
+        cleanupResponses(response);
+      });
+      // TODO: Will need FakeTime working to test.
+      // test(`aborts when the mediation times out`, async () => {});
     });
   });
 
@@ -1197,7 +1282,7 @@ describe('LobbyServer', () => {
       );
 
       peerClients[0].send(
-        encodeWsMessage(ClientWsMethod.Message, {
+        encodePacket(ClientWsMethod.Message, {
           lobbyId,
           message: 'Hello, fellow gamers!',
           token: peers[0].token,
@@ -1227,7 +1312,7 @@ describe('LobbyServer', () => {
       waitForMessage(hostClient, ServerWsMethod.MessageReceived).then(() => (messageWasReceived = true));
 
       client.send(
-        encodeWsMessage(ClientWsMethod.Message, {
+        encodePacket(ClientWsMethod.Message, {
           lobbyId,
           message: 'Hello, fellow gamers!',
           token: token,
@@ -1261,7 +1346,7 @@ async function createClient(
 
   if (subs) {
     newClient.addEventListener('message', (event) => {
-      const [receivedMethod, payload] = decodeWsMessage(event.data);
+      const [receivedMethod, payload] = decodePacket(event.data);
 
       const action = subs[receivedMethod as keyof WsMessagePayloadMap];
 
@@ -1272,7 +1357,7 @@ async function createClient(
   let token: IdToken;
 
   newClient.addEventListener('message', (event) => {
-    const [receivedMethod, payload] = decodeWsMessage(event.data);
+    const [receivedMethod, payload] = decodePacket(event.data);
 
     if (receivedMethod === ServerWsMethod.ClientRegistered) {
       token = payload.token;
@@ -1290,7 +1375,7 @@ async function createClient(
 function waitForMessage(socket: WebSocket, method: ClientWsMethod | ServerWsMethod): Promise<[string, any]> {
   return new Promise((resolve) => {
     socket.addEventListener('message', (event) => {
-      const [receivedMethod, payload] = decodeWsMessage(event.data);
+      const [receivedMethod, payload] = decodePacket(event.data);
 
       if (receivedMethod === method) {
         resolve([receivedMethod, payload]);

@@ -72,6 +72,14 @@ export enum ServerWsMethod {
    * packet whenever it receives this message.
    */
   SendPtpPacket = 'ptpMediation_send',
+  /**
+   * Emitted by the server when PTP Mediation is aborted. This can happen
+   * for a number of reasons, including a peer disconnecting during the
+   * mediation process, the process timing out, etc. The exact reason is
+   * included in the message payload and is user-friendly enough to be
+   * displayed.
+   */
+  PtpMediationAborted = 'ptpMediation_aborted',
 }
 
 /**
@@ -132,6 +140,16 @@ export const wsMessagePayloadSchemaMap = {
       senderName: z.string(),
       message: z.string(),
     }),
+  }),
+
+  [ServerWsMethod.SendPtpPacket]: z.object({
+    /**
+     * The port the client should use for its UDP connection.
+     */
+    port: z.number(),
+  }),
+  [ServerWsMethod.PtpMediationAborted]: z.object({
+    abortReason: z.string(),
   }),
 
   [ClientWsMethod.Message]: registeredClientMessagePayloadSchema.merge(

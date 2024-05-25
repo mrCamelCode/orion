@@ -1,6 +1,8 @@
 # Orion Lobby Server
 
-## What Is This?
+## The Problem
+
+## Our Solution
 
 ## Basic Flow
 

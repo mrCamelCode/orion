@@ -28,6 +28,19 @@ export class NetworkClientRegistry extends Registry<NetworkClient> {
     return this.getById(id);
   }
 
+  cleanup() {
+    Object.values(this.items).forEach((networkClient) => {
+      const socket = networkClient.item.socket;
+
+      if (![socket.CLOSING, socket.CLOSED].includes(socket.readyState)) {
+        networkClient.item.socket.close();
+      }
+    });
+
+    this.#tokenToClientMapping = {};
+    this.items = {};
+  }
+
   #handleItemRegistered: ItemRegisteredHandler<NetworkClient> = (item) => {
     this.#tokenToClientMapping[item.item.token] = item.id;
   };

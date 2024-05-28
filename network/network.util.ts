@@ -12,7 +12,11 @@ import { WsMessagePayloadMap, WsMethod } from './network.model.ts';
  * @returns The properly encoded message to send over the websocket connection.
  * Messages are in the format {method}:{base64EncodedPayload}.
  */
-export function encodePacket<T extends WsMethod>(method: T, payload: WsMessagePayloadMap[T]) {
+export function encodeWsPacket<T extends WsMethod>(method: T, payload: WsMessagePayloadMap[T]) {
+  return encodePacket(method, payload);
+}
+
+export function encodePacket(method: string, payload: Record<string, any>) {
   return `${method}:${encodeBase64(JSON.stringify(payload))}`;
 }
 
@@ -22,7 +26,7 @@ export function encodePacket<T extends WsMethod>(method: T, payload: WsMessagePa
  * @param msg - The message to decode.
  *
  * @returns The decoded message, assuming a format that would be created by
- * {@link encodePacket}.
+ * {@link encodeWsPacket}.
  */
 export function decodePacket<T extends Record<string, any>>(msg: string): [string, T] {
   const textDecoder = new TextDecoder();

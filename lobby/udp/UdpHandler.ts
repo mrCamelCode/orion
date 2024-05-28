@@ -33,9 +33,11 @@ export class UdpHandler {
           case ClientDatagramMethod.PtpMediationConnect: {
             const { token } = payload as ClientDatagramPayloadMap[ClientDatagramMethod.PtpMediationConnect];
 
-            const { item: networkClient } = this.#networkClientRegistry.getByToken(token) ?? {};
+            const { item: networkClient, id: networkClientId } = this.#networkClientRegistry.getByToken(token) ?? {};
 
             if (networkClient) {
+              logger.info(`Attempting to capture network details for client ${networkClientId}`);
+
               this.#lobbyRegistry.handlePtpMediationConnect(address as Deno.NetAddr, networkClient);
             } else {
               logger.warn(`Received ${method} datagram that had an unknown token.`);

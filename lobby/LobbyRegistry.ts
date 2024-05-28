@@ -1,7 +1,7 @@
 import { logger } from '../logging/Logger.ts';
 import { NetworkClient } from '../network/NetworkClient.ts';
 import { ServerWsMethod } from '../network/network.model.ts';
-import { encodePacket, sendToSockets } from '../network/network.util.ts';
+import { encodeWsPacket, sendToSockets } from '../network/network.util.ts';
 import { PtpMediator } from '../ptp-mediation/PtpMediator.ts';
 import { ItemRegisteredHandler, ItemRemovedHandler, Registry } from '../shared/Registry.abstract.ts';
 import { IdToken } from '../shared/model.ts';
@@ -51,7 +51,7 @@ export class LobbyRegistry extends Registry<Lobby> {
         const membersToNotify = lobby.otherMembers(lobbyClient);
 
         sendToSockets(
-          encodePacket(ServerWsMethod.PeerConnected, {
+          encodeWsPacket(ServerWsMethod.PeerConnected, {
             peerName: lobbyClient.name,
             lobbyId,
           }),
@@ -94,7 +94,7 @@ export class LobbyRegistry extends Registry<Lobby> {
         const membersToNotify = lobby.otherMembers(lobbyClient);
 
         sendToSockets(
-          encodePacket(ServerWsMethod.PeerDisconnected, {
+          encodeWsPacket(ServerWsMethod.PeerDisconnected, {
             peerName: lobbyClient.name,
             lobbyId,
           }),
@@ -157,16 +157,38 @@ export class LobbyRegistry extends Registry<Lobby> {
       const mediator = new PtpMediator(lobby, this.#udpPort);
 
       this.#lobbyIdToPtpMediator[lobbyId] = mediator;
+
+      mediator.onSuccess.subscribe(() => {
+        logger.info(
+          `All peers of lobby ${lobbyId} have indicated that they've successfully connected to one another. ` +
+            `The lobby will now auto-close.`
+        );
+
+        sendToSockets(
+          encodeWsPacket(ServerWsMethod.PtpMediationSuccessful, {}),
+          ...lobby.members.map((m) => m.networkClient.socket)
+        );
+
+        this.removeById(lobbyId);
+      });
       mediator.onCleanup.subscribe(() => {
         delete this.#lobbyIdToPtpMediator[lobbyId];
         lobby.unlock();
       });
       mediator.onAbort.subscribe((reason) => {
+        logger.warn(`PTP Mediation on lobby ${lobbyId} is being aborted for reason: ${reason}`);
+
         sendToSockets(
-          encodePacket(ServerWsMethod.PtpMediationAborted, {
+          encodeWsPacket(ServerWsMethod.PtpMediationAborted, {
             abortReason: reason,
           }),
           ...lobby.members.map((m) => m.networkClient.socket)
+        );
+      });
+      mediator.onStartingConnection.subscribe(() => {
+        logger.info(
+          `All peers of lobby ${lobbyId} provided network details. ` +
+            `Peers have been asked to start peer-to-peer connection.`
         );
       });
 
@@ -186,10 +208,27 @@ export class LobbyRegistry extends Registry<Lobby> {
     }
   }
 
+  handlePtpMediationPeerConnectSuccess(networkClient: NetworkClient) {
+    const mediator = this.#getPtpMediatorFromNetworkClient(networkClient);
+
+    if (mediator) {
+      mediator.indicateSuccessfulPeerConnectionForNetworkClient(networkClient);
+    }
+  }
+
   isMediatingPtpForLobby(lobbyId: string): boolean {
     return !!this.#lobbyIdToPtpMediator[lobbyId];
   }
 
+  cleanup() {
+    Object.values(this.#lobbyIdToPtpMediator).forEach((mediator) => {
+      mediator.cleanup();
+    });
+
+    this.#lobbyIdToPtpMediator = {};
+    this.#networkClientToLobbyMapping = {};
+    this.items = {};
+  }
 
   protected override getNextId(): string {
     return generateBase36Id(5);
@@ -218,7 +257,7 @@ export class LobbyRegistry extends Registry<Lobby> {
     const members = removedLobby.members;
 
     sendToSockets(
-      encodePacket(ServerWsMethod.LobbyClosed, {
+      encodeWsPacket(ServerWsMethod.LobbyClosed, {
         lobbyName: removedLobby.name,
         lobbyId: removedLobbyId,
       }),

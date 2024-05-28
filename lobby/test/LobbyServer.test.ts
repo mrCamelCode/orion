@@ -3,12 +3,14 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, test } from 'bdd'
 import { restore } from 'mock';
 import { HttpMethod } from 'potami';
 import { ClientWsMethod, ServerWsMethod, WsMessagePayloadMap, WsMethod } from '../../network/network.model.ts';
-import { decodePacket, encodePacket } from '../../network/network.util.ts';
+import { decodePacket, encodePacket, encodeWsPacket } from '../../network/network.util.ts';
 import { IdToken } from '../../shared/model.ts';
 import { ValueOf } from '../../types/types.ts';
+import { stubLogger } from '../../util/testing.util.ts';
 import { waitFor } from '../../util/util.ts';
 import { LobbyServer } from '../LobbyServer.ts';
 import { JoinLobbyPayload } from '../http/api/lobbies/lobbies.schema.ts';
+import { ClientDatagramMethod } from '../udp/udp.model.ts';
 
 const HTTP_PORT = 3000;
 
@@ -27,12 +29,12 @@ function getStartPtpMediationPath(lobbyId: string): string {
 let portCounter = 0;
 let server: LobbyServer;
 
-// Given that I actually start the server and create a client,
+// Given that I actually start the server and create clients,
 // these are more like integration tests. Great for peering into
 // how a client might communicate with the server.
 describe('LobbyServer', () => {
   beforeAll(() => {
-    // stubLogger();
+    stubLogger();
   });
   beforeEach(async () => {
     server = new LobbyServer();
@@ -119,7 +121,7 @@ describe('LobbyServer', () => {
 
         otherClient.close();
 
-        cleanupResponses(hostResponse, joinResponse, publicLobbiesResponse, newPublicLobbiesResponse);
+        await cleanupResponses(hostResponse, joinResponse, publicLobbiesResponse, newPublicLobbiesResponse);
       });
       test('all peers receive a message that the lobby was closed when the host leaves', async () => {
         const { client: host, token: hostToken } = await createClient();
@@ -165,7 +167,7 @@ describe('LobbyServer', () => {
         await Promise.all(otherClientsLobbyClosed);
 
         otherClients.forEach((otherClient) => otherClient.client.close());
-        cleanupResponses(hostResponse, ...joinResponses);
+        await cleanupResponses(hostResponse, ...joinResponses);
       });
       test('all members of the lobby receive a message that a peer disconnected when a non-host member disconnects', async () => {
         const { client: host, token: hostToken } = await createClient();
@@ -214,7 +216,7 @@ describe('LobbyServer', () => {
 
         otherClients.forEach((otherClient) => otherClient.client.close());
         host.close();
-        cleanupResponses(hostResponse, ...joinResponses);
+        await cleanupResponses(hostResponse, ...joinResponses);
       });
     });
   });
@@ -261,7 +263,7 @@ describe('LobbyServer', () => {
 
           assertEquals(response.status, 400);
 
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
         test('the payload has no lobby name', async () => {
           const { client, token } = await createClient();
@@ -278,7 +280,7 @@ describe('LobbyServer', () => {
 
           assertEquals(response.status, 400);
 
-          cleanupResponses(response);
+          await cleanupResponses(response);
           client.close();
         });
         test('the payload has no host name', async () => {
@@ -296,7 +298,7 @@ describe('LobbyServer', () => {
 
           assertEquals(response.status, 400);
 
-          cleanupResponses(response);
+          await cleanupResponses(response);
           client.close();
         });
         test('the payload has no public indicator', async () => {
@@ -314,7 +316,7 @@ describe('LobbyServer', () => {
 
           assertEquals(response.status, 400);
 
-          cleanupResponses(response);
+          await cleanupResponses(response);
           client.close();
         });
         test('the payload does not specify max members', async () => {
@@ -332,7 +334,7 @@ describe('LobbyServer', () => {
 
           assertEquals(response.status, 400);
 
-          cleanupResponses(response);
+          await cleanupResponses(response);
           client.close();
         });
         test('the client is already the host of another lobby', async () => {
@@ -368,7 +370,7 @@ describe('LobbyServer', () => {
 
           assert(payload.errors.some((error: string) => error.includes('cannot be the host of a new lobby')));
 
-          cleanupResponses(firstLobbyResponse, secondLobbyResponse);
+          await cleanupResponses(firstLobbyResponse, secondLobbyResponse);
           client.close();
         });
         test('the client is already in another lobby', async () => {
@@ -419,7 +421,7 @@ describe('LobbyServer', () => {
           host.close();
           peer.close();
 
-          cleanupResponses(hostResponse, joinResponse, peerHostResponse);
+          await cleanupResponses(hostResponse, joinResponse, peerHostResponse);
         });
       });
       describe('validation', () => {
@@ -440,7 +442,7 @@ describe('LobbyServer', () => {
           assertEquals(response.status, 400);
 
           client.close();
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
         test('the host name cannot exceed 50 characters', async () => {
           const { client, token } = await createClient();
@@ -459,7 +461,7 @@ describe('LobbyServer', () => {
           assertEquals(response.status, 400);
 
           client.close();
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
         test('the lobby name cannot be only spaces', async () => {
           const { client, token } = await createClient();
@@ -478,7 +480,7 @@ describe('LobbyServer', () => {
           assertEquals(response.status, 400);
 
           client.close();
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
         test('the host name cannot be only spaces', async () => {
           const { client, token } = await createClient();
@@ -497,7 +499,7 @@ describe('LobbyServer', () => {
           assertEquals(response.status, 400);
 
           client.close();
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
         test('the max members cannot be 0', async () => {
           const { client, token } = await createClient();
@@ -516,7 +518,7 @@ describe('LobbyServer', () => {
           assertEquals(response.status, 400);
 
           client.close();
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
         test('the max members cannot be negative', async () => {
           const { client, token } = await createClient();
@@ -535,7 +537,7 @@ describe('LobbyServer', () => {
           assertEquals(response.status, 400);
 
           client.close();
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
         test('the max members cannot be more than 64', async () => {
           const { client, token } = await createClient();
@@ -554,7 +556,7 @@ describe('LobbyServer', () => {
           assertEquals(response.status, 400);
 
           client.close();
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
       });
     });
@@ -624,7 +626,7 @@ describe('LobbyServer', () => {
         host.close();
         peer.close();
         otherPeer.close();
-        cleanupResponses(hostResponse, joinResponse, otherJoinResponse);
+        await cleanupResponses(hostResponse, joinResponse, otherJoinResponse);
       });
       describe('success when...', () => {
         test('the payload is good and the client can join the lobby', async () => {
@@ -665,7 +667,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, joinResponse);
+          await cleanupResponses(hostResponse, joinResponse);
         });
       });
       describe('failure when...', () => {
@@ -700,7 +702,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, joinResponse);
+          await cleanupResponses(hostResponse, joinResponse);
         });
         test('the payload has no peerName', async () => {
           const { client: host, token: hostToken } = await createClient();
@@ -733,7 +735,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, joinResponse);
+          await cleanupResponses(hostResponse, joinResponse);
         });
         test('the specified lobby does not exist', async () => {
           const { client: host, token: hostToken } = await createClient();
@@ -772,7 +774,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, joinResponse);
+          await cleanupResponses(hostResponse, joinResponse);
         });
         test('the client is already the host of another lobby', async () => {
           const { client: host, token: hostToken } = await createClient();
@@ -819,7 +821,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, otherHostResponse, joinResponse);
+          await cleanupResponses(hostResponse, otherHostResponse, joinResponse);
         });
         test('the client is already in another lobby', async () => {
           const { client: host, token: hostToken } = await createClient();
@@ -884,7 +886,7 @@ describe('LobbyServer', () => {
           host.close();
           peer.close();
           otherHost.close();
-          cleanupResponses(hostResponse, otherHostResponse, joinResponse, otherJoinResponse);
+          await cleanupResponses(hostResponse, otherHostResponse, joinResponse, otherJoinResponse);
         });
         test('the lobby is full', async () => {
           const { client: host, token: hostToken } = await createClient();
@@ -918,7 +920,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, joinResponse);
+          await cleanupResponses(hostResponse, joinResponse);
         });
         test('someone with the requested name is already in the lobby', async () => {
           const { client: host, token: hostToken } = await createClient();
@@ -952,7 +954,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, joinResponse);
+          await cleanupResponses(hostResponse, joinResponse);
         });
       });
       describe('validation', () => {
@@ -988,7 +990,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, joinResponse);
+          await cleanupResponses(hostResponse, joinResponse);
         });
         test('peerName cannot be only spaces', async () => {
           const { client: host, token: hostToken } = await createClient();
@@ -1022,7 +1024,7 @@ describe('LobbyServer', () => {
 
           host.close();
           peer.close();
-          cleanupResponses(hostResponse, joinResponse);
+          await cleanupResponses(hostResponse, joinResponse);
         });
       });
     });
@@ -1048,8 +1050,8 @@ describe('LobbyServer', () => {
 
         await Promise.all(messageWaiters);
 
-        cleanupLobby();
-        cleanupResponses(response);
+        await cleanupLobby();
+        await cleanupResponses(response);
       });
 
       describe(`reminder ${ServerWsMethod.SendPtpPacket}`, () => {
@@ -1078,8 +1080,8 @@ describe('LobbyServer', () => {
         //   using time = new FakeTime();
         //   time.tick(11000);
         //   await Promise.all(reminderWaiters);
-        //   cleanupLobby();
-        //   cleanupResponses(response);
+        //   await cleanupLobby();
+        //   await cleanupResponses(response);
         // });
       });
 
@@ -1100,8 +1102,8 @@ describe('LobbyServer', () => {
 
           assertEquals(response.status, 200);
 
-          cleanupLobby();
-          cleanupResponses(response);
+          await cleanupLobby();
+          await cleanupResponses(response);
         });
       });
       describe('failure when...', () => {
@@ -1115,8 +1117,8 @@ describe('LobbyServer', () => {
 
           assertEquals(response.status, 400);
 
-          cleanupLobby();
-          cleanupResponses(response);
+          await cleanupLobby();
+          await cleanupResponses(response);
         });
         test(`the requesting client is not the host`, async () => {
           const { peers, lobbyId, cleanupLobby } = await createLobby(1);
@@ -1133,8 +1135,8 @@ describe('LobbyServer', () => {
           assert((json.errors as string[]).some((err) => err.includes('not the host')));
           assertEquals(response.status, 409);
 
-          cleanupLobby();
-          cleanupResponses(response);
+          await cleanupLobby();
+          await cleanupResponses(response);
         });
         test(`the requesting client is the host of a different lobby`, async () => {
           const { lobbyId, cleanupLobby } = await createLobby(1);
@@ -1157,9 +1159,9 @@ describe('LobbyServer', () => {
 
           assertEquals(response.status, 409);
 
-          cleanupLobby();
+          await cleanupLobby();
           cleanupOtherLobby();
-          cleanupResponses(response);
+          await cleanupResponses(response);
         });
         test(`there's only one client in the lobby`, async () => {
           const {
@@ -1180,8 +1182,8 @@ describe('LobbyServer', () => {
           assert((json.errors as string[]).some((err) => err.includes('must be at least 2')));
           assertEquals(response.status, 409);
 
-          cleanupLobby();
-          cleanupResponses(response);
+          await cleanupLobby();
+          await cleanupResponses(response);
         });
         test(`there's only one client in the lobby after a disconnect`, async () => {
           const {
@@ -1207,8 +1209,8 @@ describe('LobbyServer', () => {
           assert((json.errors as string[]).some((err) => err.includes('must be at least 2')));
           assertEquals(response.status, 409);
 
-          cleanupLobby();
-          cleanupResponses(response);
+          await cleanupLobby();
+          await cleanupResponses(response);
         });
         test(`there's already a mediation being performed for the lobby`, async () => {
           const {
@@ -1233,10 +1235,10 @@ describe('LobbyServer', () => {
             }),
           });
 
-          assertEquals(response.status, 409);
+          assertEquals(otherResponse.status, 409);
 
-          cleanupLobby();
-          cleanupResponses(response, otherResponse);
+          await cleanupLobby();
+          await cleanupResponses(response, otherResponse);
         });
       });
     });
@@ -1263,11 +1265,159 @@ describe('LobbyServer', () => {
 
         await Promise.all(messageWaiters);
 
-        cleanupLobby();
-        cleanupResponses(response);
+        await cleanupLobby();
+        await cleanupResponses(response);
       });
       // TODO: Will need FakeTime working to test.
       // test(`aborts when the mediation times out`, async () => {});
+    });
+    describe('start peer-to-peer connection', () => {
+      test(`once the server has received a connection UDP packet from all peers, server sends ${ServerWsMethod.StartPeerConnection} to peers`, async () => {
+        const { host, peers, lobbyId, cleanupLobby } = await createLobby(2);
+        const members = [host, ...peers];
+        const udpClientPort = 10000;
+
+        const response = await fetch(`${getHttpConnectionUrl()}${getStartPtpMediationPath(lobbyId)}`, {
+          method: HttpMethod.Post,
+          body: JSON.stringify({
+            token: host.token,
+          }),
+        });
+
+        assertEquals(response.status, 200);
+
+        const clientData = members.map((m, i) => ({
+          udpClient: Deno.listenDatagram({ port: udpClientPort + i, transport: 'udp' }),
+          client: m,
+        }));
+
+        const startConnectionMessagesWaiters = members.map((m) =>
+          waitForMessage(m.client, ServerWsMethod.StartPeerConnection)
+        );
+
+        await Promise.all(
+          clientData.map((c) => {
+            const message = {
+              token: c.client.token,
+            };
+
+            const encodedMessage = new TextEncoder().encode(
+              encodePacket(ClientDatagramMethod.PtpMediationConnect, message)
+            );
+
+            return c.udpClient.send(encodedMessage, { hostname: 'localhost', port: server.udpPort } as Deno.NetAddr);
+          })
+        );
+
+        const startConnectionMessages = await Promise.all(startConnectionMessagesWaiters);
+
+        const [hostConnectionMessage] = startConnectionMessages;
+        const [, hostPayload] = hostConnectionMessage as [
+          string,
+          WsMessagePayloadMap[ServerWsMethod.StartPeerConnection]
+        ];
+
+        assertEquals(hostPayload.peers.length, 2);
+        assert(hostPayload.peers.every((peer) => peer.ip === '127.0.0.1'));
+        assert(hostPayload.peers.some((peer) => peer.port === udpClientPort + 1));
+        assert(hostPayload.peers.some((peer) => peer.port === udpClientPort + 2));
+
+        startConnectionMessages.forEach((message, index) => {
+          const [, payload] = message as [string, WsMessagePayloadMap[ServerWsMethod.StartPeerConnection]];
+          const member = members[index];
+
+          if (member === host) {
+            // The host receives connection details for all peers.
+            assertEquals(payload.peers.length, 2);
+            assert(payload.peers.every((peer) => peer.ip === '127.0.0.1'));
+            assert(payload.peers.some((peer) => peer.port === udpClientPort + 1));
+            assert(payload.peers.some((peer) => peer.port === udpClientPort + 2));
+          } else {
+            // Non-hosts receive only the connection details for the host.
+            assertEquals(payload.peers.length, 1);
+            assertEquals(payload.peers[0].ip, '127.0.0.1');
+            assertEquals(payload.peers[0].port, udpClientPort);
+          }
+        });
+
+        await cleanupLobby();
+        await cleanupResponses(response);
+        clientData.forEach((c) => c.udpClient.close());
+      });
+    });
+    describe('finishing peer-to-peer connection', () => {
+      test(
+        `peers receive a ${ServerWsMethod.PtpMediationSuccessful} message and the lobby auto-closes when all peers have indicated connection success, ` +
+          `which also issues a ${ServerWsMethod.LobbyClosed} message`,
+        async () => {
+          const { host, peers, lobbyId, cleanupLobby } = await createLobby(2);
+          const members = [host, ...peers];
+          const udpClientPort = 10000;
+
+          const response = await fetch(`${getHttpConnectionUrl()}${getStartPtpMediationPath(lobbyId)}`, {
+            method: HttpMethod.Post,
+            body: JSON.stringify({
+              token: host.token,
+            }),
+          });
+
+          assertEquals(response.status, 200);
+
+          const clientData = members.map((m, i) => ({
+            udpClient: Deno.listenDatagram({ port: udpClientPort + i, transport: 'udp' }),
+            client: m,
+          }));
+
+          const getLobbiesResponseBefore = await fetch(`${getHttpConnectionUrl()}${GET_PUBLIC_LOBBIES_PATH}`);
+          assertEquals(getLobbiesResponseBefore.status, 200);
+          const { lobbies: publicLobbiesBefore } = (await getLobbiesResponseBefore.json()) as { lobbies: any[] };
+          assertEquals(publicLobbiesBefore.length, 1);
+
+          const startConnectionMessagesWaiters = members.map((m) =>
+            waitForMessage(m.client, ServerWsMethod.StartPeerConnection)
+          );
+
+          await Promise.all(
+            clientData.map((c) => {
+              const message = {
+                token: c.client.token,
+              };
+
+              const encodedMessage = new TextEncoder().encode(
+                encodePacket(ClientDatagramMethod.PtpMediationConnect, message)
+              );
+
+              return c.udpClient.send(encodedMessage, { hostname: 'localhost', port: server.udpPort } as Deno.NetAddr);
+            })
+          );
+
+          await Promise.all(startConnectionMessagesWaiters);
+
+          const ptpMediationSuccessMessageWaiters = members.map((m) =>
+            waitForMessage(m.client, ServerWsMethod.PtpMediationSuccessful)
+          );
+          const lobbyClosedMessageWaiters = members.map((m) => waitForMessage(m.client, ServerWsMethod.LobbyClosed));
+
+          members.forEach((member) => {
+            member.client.send(
+              encodeWsPacket(ClientWsMethod.ConnectedToPeers, {
+                token: member.token,
+              })
+            );
+          });
+
+          await Promise.all(ptpMediationSuccessMessageWaiters);
+          console.log('AFETR 1');
+          await Promise.all(lobbyClosedMessageWaiters);
+          console.log('AFTER 2');
+
+          await cleanupLobby();
+          await cleanupResponses(response, getLobbiesResponseBefore);
+          clientData.forEach((c) => c.udpClient.close());
+        }
+      );
+      // TODO: Will need FakeTime working to test.
+      // test(`aborts when the ptp connection times out`, async () => {});
     });
   });
 
@@ -1282,7 +1432,7 @@ describe('LobbyServer', () => {
       );
 
       peerClients[0].send(
-        encodePacket(ClientWsMethod.Message, {
+        encodeWsPacket(ClientWsMethod.Message, {
           lobbyId,
           message: 'Hello, fellow gamers!',
           token: peers[0].token,
@@ -1297,7 +1447,7 @@ describe('LobbyServer', () => {
         assert('timestamp' in payload.message);
       });
 
-      cleanupLobby();
+      await cleanupLobby();
     });
     test(`no message notification is present when a client outside the lobby tries to send a message to it`, async () => {
       const {
@@ -1312,7 +1462,7 @@ describe('LobbyServer', () => {
       waitForMessage(hostClient, ServerWsMethod.MessageReceived).then(() => (messageWasReceived = true));
 
       client.send(
-        encodePacket(ClientWsMethod.Message, {
+        encodeWsPacket(ClientWsMethod.Message, {
           lobbyId,
           message: 'Hello, fellow gamers!',
           token: token,
@@ -1333,7 +1483,7 @@ describe('LobbyServer', () => {
 
       client.close();
 
-      cleanupLobby();
+      await cleanupLobby();
     });
   });
 });
@@ -1416,7 +1566,7 @@ async function createLobby(
   /**
    * Call to cleanup any open connections associated with the lobby.
    */
-  cleanupLobby: () => void;
+  cleanupLobby: () => Promise<void>;
 }> {
   const { client: hostClient, token: hostToken } = await createClient();
 
@@ -1455,13 +1605,14 @@ async function createLobby(
     },
     peers: peerCreationResults,
     lobbyId,
-    cleanupLobby: () => {
+    cleanupLobby: async () => {
       hostClient.close();
+
       peerCreationResults.forEach(({ client }) => {
         client.close();
       });
 
-      cleanupResponses(...peerJoinResponses, hostResponse);
+      await cleanupResponses(...peerJoinResponses, hostResponse);
     },
   };
 }

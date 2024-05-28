@@ -7,7 +7,7 @@
     "time": "https://deno.land/std@0.224.0/testing/time.ts",
     "base64": "https://deno.land/std@0.224.0/encoding/base64.ts",
     "zod": "https://deno.land/x/zod@v3.23.8/mod.ts",
-    "potami": "https://deno.land/x/potami@0.3.3/mod.ts"
+    "potami": "https://deno.land/x/potami@0.3.4/mod.ts"
   },
   "tasks": {
     "start": "deno run --allow-net --unstable-net --allow-read main.ts",

@@ -29,8 +29,9 @@ export enum ServerWsMethod {
 
   /**
    * Emitted when a lobby is closed. A lobby could be closed because the host
-   * leaves. When a lobby closes, it's destroyed and all its members are kicked
-   * out.
+   * leaves, or the PTP Mediation process finishes.
+   *
+   * When a lobby closes, it's destroyed and all its members are kicked out.
    */
   LobbyClosed = 'lobby_closed',
 
@@ -80,6 +81,24 @@ export enum ServerWsMethod {
    * displayed.
    */
   PtpMediationAborted = 'ptpMediation_aborted',
+  /**
+   * Emitted by the server once all members of the lobby have successfully sent their
+   * UDP packets for the server to capture their connection details. Upon receiving
+   * this message, it's expected that clients will begin attempting to connect directly
+   * to one another. The payload of the message contains the details for connecting
+   * to the relevant peers for the clients.
+   *
+   * The host of the lobby will receive the details of all the other members of the lobby.
+   * The other non-host members of the lobby will receive the host's network details.
+   */
+  StartPeerConnection = 'ptpMediation_peersConnection_start',
+  /**
+   * Emitted by the server when all members of the lobby have indicated that they've
+   * successfully connected to the requisite peers. This marks the end of the PTP
+   * mediation process. Shortly after sending this message to all peers, the lobby will
+   * automatically close.
+   */
+  PtpMediationSuccessful = 'ptpMediation_success',
 }
 
 /**
@@ -93,11 +112,26 @@ export enum ClientWsMethod {
    * members of the relevant lobby.
    */
   Message = 'lobby_messaging_send',
+  /**
+   * Emitted by the client when they've successfully established a connection to their
+   * peer(s).
+   *
+   * For the lobby host, this means that they've connected to all the other members of the
+   * lobby. For the other members of the lobby, this means they've connected to the host.
+   */
+  ConnectedToPeers = 'ptpMediation_peersConnection_success',
 }
 
 const registeredClientMessagePayloadSchema = z.object({
   token: z.string(),
 });
+
+export const ptpDetailsSchema = z.object({
+  ip: z.string(),
+  port: z.number(),
+});
+
+export type PtpDetails = z.infer<typeof ptpDetailsSchema>;
 
 export const wsMessagePayloadSchemaMap = {
   [ServerWsMethod.WsMessageError]: z.object({
@@ -151,6 +185,10 @@ export const wsMessagePayloadSchemaMap = {
   [ServerWsMethod.PtpMediationAborted]: z.object({
     abortReason: z.string(),
   }),
+  [ServerWsMethod.StartPeerConnection]: z.object({
+    peers: z.array(ptpDetailsSchema),
+  }),
+  [ServerWsMethod.PtpMediationSuccessful]: z.object({}),
 
   [ClientWsMethod.Message]: registeredClientMessagePayloadSchema.merge(
     z.object({
@@ -158,6 +196,7 @@ export const wsMessagePayloadSchemaMap = {
       message: z.string().min(1).max(250),
     })
   ),
+  [ClientWsMethod.ConnectedToPeers]: registeredClientMessagePayloadSchema,
 };
 
 // Convenience for WsMessagePayloadMap type.

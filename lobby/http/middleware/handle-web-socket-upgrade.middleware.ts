@@ -6,10 +6,11 @@ import {
   ClientWsMethod,
   OutboundMessage,
   ServerWsMethod,
+  WsMessagePayloadMap,
   WsMethod,
   wsMessagePayloadSchemaMap,
 } from '../../../network/network.model.ts';
-import { decodePacket, encodePacket, sendToSockets } from '../../../network/network.util.ts';
+import { decodePacket, encodeWsPacket, sendToSockets } from '../../../network/network.util.ts';
 import { LobbyRegistry } from '../../LobbyRegistry.ts';
 
 type HandlerMap = Record<ClientWsMethod, OutboundMessage<any>>;
@@ -33,6 +34,7 @@ function registerWebSocketMessageHandlers(
 ): void {
   const handlerMapping: HandlerMap = {
     [ClientWsMethod.Message]: handleLobbyMessage(networkClientRegistry, lobbyRegistry),
+    [ClientWsMethod.ConnectedToPeers]: handleConnectedToPeers(networkClientRegistry, lobbyRegistry),
   };
 
   socket.addEventListener('open', () => {
@@ -40,7 +42,7 @@ function registerWebSocketMessageHandlers(
 
     logger.info(`A client connected and was registered with the ID ${id}.`);
 
-    sendToSockets(encodePacket(ServerWsMethod.ClientRegistered, { token: registeredClient.token }), socket);
+    sendToSockets(encodeWsPacket(ServerWsMethod.ClientRegistered, { token: registeredClient.token }), socket);
   });
   socket.addEventListener('close', () => {
     const networkClient = networkClientRegistry.getBySocket(socket);
@@ -74,7 +76,7 @@ function registerWebSocketMessageHandlers(
           const { method: outgoingMethod, payload: outgoingPayload } = handler?.(payload) ?? {};
 
           if (outgoingMethod && outgoingPayload) {
-            sendToSockets(encodePacket(outgoingMethod as WsMethod, outgoingPayload), socket);
+            sendToSockets(encodeWsPacket(outgoingMethod as WsMethod, outgoingPayload), socket);
           }
         }
       } catch (error) {
@@ -128,7 +130,7 @@ const handleLobbyMessage =
         if (lobbyClient) {
           if (lobby.isMember(lobbyClient)) {
             sendToSockets(
-              encodePacket(ServerWsMethod.MessageReceived, {
+              encodeWsPacket(ServerWsMethod.MessageReceived, {
                 lobbyId,
                 message: {
                   timestamp: Date.now(),
@@ -156,4 +158,34 @@ const handleLobbyMessage =
     }
 
     return undefined;
+  };
+
+const handleConnectedToPeers =
+  (networkClientRegistry: NetworkClientRegistry, lobbyRegistry: LobbyRegistry) =>
+  (payload: WsMessagePayloadMap[ClientWsMethod.ConnectedToPeers]) => {
+    const { token } = payload;
+
+    const { item: networkClient, id: networkClientId } = networkClientRegistry.getByToken(token) ?? {};
+
+    if (networkClient) {
+      const lobby = lobbyRegistry.getLobbyFromNetworkClient(networkClient);
+
+      if (lobby) {
+        if (lobby.isUndergoingPtpMediation) {
+          lobbyRegistry.handlePtpMediationPeerConnectSuccess(networkClient);
+
+          return undefined;
+        } else {
+          logger.warn(
+            `Client ${networkClientId} attempted to indicate peer connection success, but the lobby is not undergoing PTP Mediation.`
+          );
+        }
+      } else {
+        logger.warn(
+          `Client ${networkClientId} attempted to indicate peer connection success, but they're not in a lobby.`
+        );
+      }
+    } else {
+      logger.warn(`Unregistered client attempted to indicate peer connection success.`);
+    }
   };

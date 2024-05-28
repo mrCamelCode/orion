@@ -1,7 +1,9 @@
 import { parseArgs } from 'parseArgs';
 import { LobbyServer } from './lobby/LobbyServer.ts';
 
-const { ptpmServerConnectTimeoutMs, ptpmConnectRequestIntervalMs, ptpmConnectTimeoutMs } = parseArgs(Deno.args);
+const { ptpmServerConnectTimeoutMs, ptpmConnectRequestIntervalMs, ptpmConnectTimeoutMs, httpPort, udpPort } = parseArgs(
+  Deno.args
+);
 
 const server = new LobbyServer({
   serverConnectTimeoutMs: asNum(ptpmServerConnectTimeoutMs),
@@ -9,7 +11,7 @@ const server = new LobbyServer({
   ptpConnectTimeoutMs: asNum(ptpmConnectTimeoutMs),
 });
 
-server.start();
+server.start(asNum(httpPort), asNum(udpPort));
 
 function asNum(num: any): number | undefined {
   const n = +num;

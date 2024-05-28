@@ -48,13 +48,19 @@ export class LobbyServer {
     this.#networkClientRegistry = new NetworkClientRegistry();
     this.#lobbyRegistry = new LobbyRegistry(updPort, this.#ptpMediationOptions);
 
-    await this.#startHttpServer(httpPort, this.#lobbyRegistry, this.#networkClientRegistry);
-    this.#startUdpServer(updPort, this.#lobbyRegistry, this.#networkClientRegistry);
-
     this.#httpPort = httpPort;
     this.#udpPort = updPort;
 
-    logger.info('🌠 Orion is ready.');
+    try {
+      await this.#startHttpServer(httpPort, this.#lobbyRegistry, this.#networkClientRegistry);
+      this.#startUdpServer(updPort, this.#lobbyRegistry, this.#networkClientRegistry);
+
+      logger.info('🌠 Orion is ready.');
+    } catch (error) {
+      logger.error(`Orion failed to start because of an error. ${error}`);
+
+      await this.stop();
+    }
   }
 
   async stop() {
@@ -82,7 +88,7 @@ export class LobbyServer {
       .controller(new LobbiesController(lobbyRegistry, networkClientRegistry))
       .start(port);
 
-    logger.info('HTTP server is ready.');
+    logger.info(`HTTP server is ready on port ${this.#httpPort}.`);
   }
 
   #startUdpServer(port: number, lobbyRegistry: LobbyRegistry, networkClientRegistry: NetworkClientRegistry) {
@@ -96,7 +102,7 @@ export class LobbyServer {
       if (this.#udpServer) {
         const udpHandler = new UdpHandler(lobbyRegistry, networkClientRegistry);
 
-        logger.info('UDP listener is ready.');
+        logger.info(`UDP listener is ready on port ${this.#udpPort}.`);
 
         for await (const incomingDatagram of this.#udpServer) {
           if (!this.#udpServer) {

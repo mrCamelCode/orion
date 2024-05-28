@@ -3,6 +3,7 @@ import { NetworkClient } from '../network/NetworkClient.ts';
 import { ServerWsMethod } from '../network/network.model.ts';
 import { encodeWsPacket, sendToSockets } from '../network/network.util.ts';
 import { PtpMediator } from '../ptp-mediation/PtpMediator.ts';
+import { PtpMediationOptions } from '../ptp-mediation/ptp-mediation.model.ts';
 import { ItemRegisteredHandler, ItemRemovedHandler, Registry } from '../shared/Registry.abstract.ts';
 import { IdToken } from '../shared/model.ts';
 import { generateBase36Id } from '../util/util.ts';
@@ -21,10 +22,13 @@ export class LobbyRegistry extends Registry<Lobby> {
    */
   #udpPort: number;
 
-  constructor(udpPort: number) {
+  #ptpMediationOptions: PtpMediationOptions | undefined;
+
+  constructor(udpPort: number, ptpMediationOptions: PtpMediationOptions = {}) {
     super();
 
     this.#udpPort = udpPort;
+    this.#ptpMediationOptions = ptpMediationOptions;
 
     this.onItemRegistered.subscribe(this.#handleItemRegistered);
     this.onItemRemoved.subscribe(this.#handleItemRemoved);
@@ -154,7 +158,7 @@ export class LobbyRegistry extends Registry<Lobby> {
     if (lobbyId && this.has(lobbyId) && !this.#lobbyIdToPtpMediator[lobbyId]) {
       const { item: lobby } = this.getById(lobbyId)!;
 
-      const mediator = new PtpMediator(lobby, this.#udpPort);
+      const mediator = new PtpMediator(lobby, this.#udpPort, this.#ptpMediationOptions);
 
       this.#lobbyIdToPtpMediator[lobbyId] = mediator;
 

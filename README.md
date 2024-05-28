@@ -1,4 +1,4 @@
-# Orion Lobby Server
+# Orion
 
 ## The Problem
 

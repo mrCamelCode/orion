@@ -1,6 +1,7 @@
 import { HttpServer, handleCors } from 'potami';
 import { logger } from '../logging/Logger.ts';
 import { NetworkClientRegistry } from '../network/NetworkClientRegistry.ts';
+import { PtpMediationOptions } from '../ptp-mediation/ptp-mediation.model.ts';
 import { LobbyRegistry } from './LobbyRegistry.ts';
 import { LobbiesController } from './http/api/lobbies/lobbies.controller.ts';
 import { PingController } from './http/api/ping/ping.controller.ts';
@@ -19,6 +20,7 @@ export class LobbyServer {
 
   #networkClientRegistry: NetworkClientRegistry | undefined;
   #lobbyRegistry: LobbyRegistry | undefined;
+  #ptpMediationOptions: PtpMediationOptions;
 
   /**
    * The port the server is listening for HTTP messages on.
@@ -38,9 +40,13 @@ export class LobbyServer {
     return this.#udpPort;
   }
 
+  constructor(ptpMediationOptions: PtpMediationOptions = {}) {
+    this.#ptpMediationOptions = ptpMediationOptions;
+  }
+
   async start(httpPort = LobbyServer.DEFAULT_HTTP_PORT, updPort = LobbyServer.DEFAULT_UDP_PORT) {
     this.#networkClientRegistry = new NetworkClientRegistry();
-    this.#lobbyRegistry = new LobbyRegistry(updPort);
+    this.#lobbyRegistry = new LobbyRegistry(updPort, this.#ptpMediationOptions);
 
     await this.#startHttpServer(httpPort, this.#lobbyRegistry, this.#networkClientRegistry);
     this.#startUdpServer(updPort, this.#lobbyRegistry, this.#networkClientRegistry);

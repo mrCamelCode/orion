@@ -1407,9 +1407,7 @@ describe('LobbyServer', () => {
           });
 
           await Promise.all(ptpMediationSuccessMessageWaiters);
-          console.log('AFETR 1');
           await Promise.all(lobbyClosedMessageWaiters);
-          console.log('AFTER 2');
 
           await cleanupLobby();
           await cleanupResponses(response, getLobbiesResponseBefore);

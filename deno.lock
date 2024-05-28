@@ -2,8 +2,21 @@
   "version": "3",
   "packages": {
     "specifiers": {
+      "jsr:@std/assert@^0.225.3": "jsr:@std/assert@0.225.3",
+      "jsr:@std/cli": "jsr:@std/cli@0.224.3",
       "npm:@jtjs/event": "npm:@jtjs/event@1.0.2_tslib@2.6.2",
       "npm:@types/express@4.17.21": "npm:@types/express@4.17.21"
+    },
+    "jsr": {
+      "@std/assert@0.225.3": {
+        "integrity": "b3c2847aecf6955b50644cdb9cf072004ea3d1998dd7579fc0acb99dbb23bd4f"
+      },
+      "@std/cli@0.224.3": {
+        "integrity": "54fd879e24b738f6812dcc75bcae1534ba8f014245064ceae1bcfc2996c06d44",
+        "dependencies": [
+          "jsr:@std/assert@^0.225.3"
+        ]
+      }
     },
     "npm": {
       "@jtjs/event@1.0.2_tslib@2.6.2": {
@@ -276,6 +289,7 @@
   },
   "workspace": {
     "dependencies": [
+      "jsr:@std/cli",
       "npm:@jtjs/event"
     ]
   }

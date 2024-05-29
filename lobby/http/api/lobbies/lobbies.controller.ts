@@ -94,7 +94,7 @@ export class LobbiesController extends Controller {
     }
   };
 
-  'POST /:lobbyId/startPtp': RequestHandler = async (req, { lobbyId }) => {
+  'POST /:lobbyId/ptp/start': RequestHandler = async (req, { lobbyId }) => {
     const json = await req.json();
 
     validateAgainstSchema(req, json, lobbiesSchemata[LobbiesFunction.StartPtpMediation]);

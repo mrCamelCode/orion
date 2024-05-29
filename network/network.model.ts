@@ -7,18 +7,6 @@ import { z } from 'zod';
  */
 export enum ServerWsMethod {
   /**
-   * There was a problem with a websocket message the client sent to the server.
-   * This occurs when the error is in the message itself and is akin to a bad
-   * request. If you receive this message, your message failed basic validation
-   * of the expected shape and/or constraints of the contents of the message.
-   *
-   * Not all bad messages result in this message being sent out. In those cases,
-   * the server simply ignores the message. See the API documentation for the
-   * expected values for messages your client will send.
-   */
-  WsMessageError = 'wsMessage_error',
-
-  /**
    * Emitted by the server after the client successfully connects to the
    * server. This message is accompanied with the token the client needs
    * to send on future messages. The token identifies the user and should
@@ -40,7 +28,7 @@ export enum ServerWsMethod {
    */
   PeerConnected = 'lobby_peerConnect',
   /**
-   * Emitted to other when a member of a lobby leaves the lobby.
+   * Emitted to others in a lobby when a member of the lobby leaves.
    */
   PeerDisconnected = 'lobby_peerDisconnect',
 
@@ -61,7 +49,6 @@ export enum ServerWsMethod {
    *
    * ```ts
    * {
-   *   method: 'ptpMediation_connect';
    *   // The client's unique token that was provided when they originally
    *   // connected their WS.
    *   token: string;
@@ -134,21 +121,6 @@ export const ptpDetailsSchema = z.object({
 export type PtpDetails = z.infer<typeof ptpDetailsSchema>;
 
 export const wsMessagePayloadSchemaMap = {
-  [ServerWsMethod.WsMessageError]: z.object({
-    /**
-     * The method the client tried to perform that failed the
-     * server's validation.
-     */
-    method: z.string(),
-    /**
-     * Why the message is problematic. These errors are produced
-     * as the result of fairly generic tests against the message
-     * itself, which is something the end-user wouldn't necessarily
-     * know about. It's likely best to not show these errors to the
-     * end-user.
-     */
-    errors: z.array(z.string()),
-  }),
   [ServerWsMethod.ClientRegistered]: z.object({
     token: z.string(),
   }),

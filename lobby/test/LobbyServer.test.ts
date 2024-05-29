@@ -23,7 +23,7 @@ function getJoinLobbyPath(lobbyId: string): string {
 }
 
 function getStartPtpMediationPath(lobbyId: string): string {
-  return `${LOBBIES_BASE_PATH}/${lobbyId}/startPtp`;
+  return `${LOBBIES_BASE_PATH}/${lobbyId}/ptp/start`;
 }
 
 let portCounter = 0;

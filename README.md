@@ -22,7 +22,7 @@ A lightweight lobbying and peer-to-peer mediation server that prioritizes reliab
 
 Peer-to-peer connections are fairly common in the world of online multiplayer games, but establishing those direct connections can be a challenge. You could try using Universal Plug-n-Play, but what if the user's network hardware doesn't support it? There are third-party services out there, but you can be sure you'll have to pay for them. If you're an indie developer just trying to make a game where you can play with friends, you don't have a lot of options. As indie developers trying to write a P2P-networked game in Godot, we know. We looked.
 
-Techniques using NAT hole-punching are available, but most of the servers out there that are easily available are flaky at best and difficult to write clients for because they use UDP for the entire process. The process is also fairly limited--most of the solutions out there are quick-and-dirty implementations that are pretty bare-bones. No lobbying, and the APIs are poorly defined should you want to write your own client.
+Techniques using NAT hole-punching are available, but most of the servers out there that are easily available are flaky at best and difficult to write clients for because they use UDP for the entire process. The process is also fairly limited--most of the solutions out there are quick-and-dirty implementations that are pretty bare-bones. No lobbying and the APIs are poorly defined, making it difficult to write your own client.
 
 What you really need is a well-documented, reliable mediation server that also supports lobbying to get all the peers in one "place" before they start trying to connect to one another willy-nilly. We couldn't find such a solution, so we wrote one.
 
@@ -73,9 +73,9 @@ We'll show you the basic flow here. For details on writing a client and exactly 
 1. All clients in the lobby receive a message to send a UDP packet to the server. The server uses this packet to capture the the IP and port the client used to make the call. This information can be used by the client to perform NAT hole-punching later. Orion just serves as the mediator to collect the information.
    - Because this stage uses UDP, Orion makes a best effort to make it reliable. During this initial connection process, Orion will periodically send "reminder" messages over the WebSocket to any clients it hasn't yet received a UDP package from. This builds a retry into the process and helps address the unreliability of UDP at this stage.
 1. Once all clients have sent a packet to the server, Orion will send a message over the WebSocket containing connection details so the clients can start performing the direct connection to their peers.
-   1. For the host, this message contains the IP/port of all other peers in the lobby.
-   1. For the non-host clients, this message contains the IP/port of the host.
-1. At this stage, the clients must start trying to connect directly to one another using UDP and the connection information Orion provided. Once a client has confirmed a successful connection, it informs Orion and Orion notes that that client has successfully completed its P2P connection. For a client connecting to another, you should utilize a technique called [hole-punching](<https://en.wikipedia.org/wiki/Hole_punching_(networking)>). This stage must be implemented client-side. Orion is a P2P _mediator_ and cannot perform the actual direct peer-to-peer connection for you (it wouldn't be a P2P connection at that point 😉).
+   - For the host, this message contains the IP/port of all other peers in the lobby.
+   - For the non-host clients, this message contains the IP/port of the host.
+1. t this stage, the clients must start trying to connect directly to one another using UDP and the connection information Orion provided. Once a client has confirmed a successful connection, it informs Orion and Orion notes that that client has successfully completed its P2P connection. For a client connecting to another, you should utilize a technique called [hole-punching](<https://en.wikipedia.org/wiki/Hole_punching_(networking)>). This stage must be implemented client-side. Orion is a P2P _mediator_ and cannot perform the actual direct peer-to-peer connection for you (it wouldn't be a P2P connection at that point 😉).
 1. Once all clients have successfully connected to one another, Orion automatically closes the lobby. Orion's job is done.
 
 ## Writing a Client
@@ -105,6 +105,7 @@ At any point, a client may make an HTTP `GET /lobbies` request to retrieve all _
     currentMembers: number;
     maxMembers: number;
   }
+  [];
 }
 ```
 
@@ -123,6 +124,8 @@ Upon connecting, Orion will send a message over the WebSocket. The method will b
 ```
 
 The token is _very_ important. It's used to represent the client and should be considered a secret. Do not log the token. Do not make the token known to other clients. The token is cryptographically secure and can be considered your client's authentication with the server since Orion does not support identity management nor user accounts.
+
+> If you observe the logs of an Orion server, you'll see Orion logging client IDs. You may be tempted to assume these are the tokens for those clients. **Orion never logs a client's token**. Orion has many cases of internally-assigned IDs that are not sensitive like a client's token. It frequently logs these IDs in messages to help you track traffic through the server.
 
 For most requests, the client must send this token to the server in the body, so you should tuck it away in memory. One of the few exceptions is the `GET` request for lobby querying, which can be performed by any client at any time.
 
@@ -333,7 +336,7 @@ The host of the lobby will receive the IPs and ports of _all_ other members of t
 
 Non-host members of the lobby will receive only the IP and port of the host. These clients must connect to the host successfully.
 
-To complete this process, the client should start by trying to send a UDP packet to the ip:port that Orion provided, as this is the IP and port that the was opened to talk to Orion, so it's possible that channel is still open. Depending on the networks other clients are behind, you may need to try a variety of ports close to the port Orion provided, but you should start your connection attempts with the port provided.
+To complete this process, the client should start by trying to send a UDP packet to the IP and port that Orion provided, as this is the IP and port that the was opened to talk to Orion, so it's possible that channel is still open. Depending on the networks other clients are behind, you may need to try a variety of ports close to the port Orion provided, but you should start your connection attempts with the port provided.
 
 Once the client has successfully connected to all the clients that came back on the `peers` property, the client must send a WS message with method `ptpMediation_peersConnection_success` and payload of shape:
 
@@ -346,7 +349,7 @@ Once the client has successfully connected to all the clients that came back on 
 
 This notifies Orion that the client has successfully completed its connection to all requisite peers. Once all members of the lobby have sent such a message, Orion will send a WS message with method `ptpMediation_success` and an empty payload (`{}`). Shortly after sending out that message, the server will close the lobby.
 
-Orion's job is done at this point and there's no longer a point for the lobby. Your application may now use its direct connection to its peers for further communication, and close its WS connection to Orion.
+Orion's job is done at this point and there's no longer a point for the lobby. Your application may now use its direct connection to its peers for further communication. Your client should also close its WS connection to Orion at this point.
 
 ## API
 

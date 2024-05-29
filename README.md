@@ -1,6 +1,6 @@
 # Orion
 
-A lightweight lobbying and peer-to-peer mediation server intended for P2P gaming that prioritizes reliability.
+A lightweight lobbying and peer-to-peer mediation server that prioritizes reliability.
 
 ## Jump Around
 
